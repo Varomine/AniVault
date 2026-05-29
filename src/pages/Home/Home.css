@@ -1,0 +1,508 @@
+/* ============================================
+   Home Page — Hero Banner & Sections
+   ============================================ */
+
+/* ---- Page Container ---- */
+.home-page {
+  width: 100%;
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+/* ============================================
+   Hero Banner
+   ============================================ */
+.hero-banner {
+  position: relative;
+  width: 100%;
+  height: 70vh;
+  min-height: 500px;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+}
+
+.hero-banner-skeleton {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+}
+
+/* ---- Background Image ---- */
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center 20%;
+  background-repeat: no-repeat;
+  filter: blur(2px) brightness(0.3);
+  transform: scale(1.1);
+  transition: opacity 0.6s ease;
+}
+
+.hero-bg-enter {
+  opacity: 1;
+}
+
+.hero-bg-exit {
+  opacity: 0;
+}
+
+/* ---- Gradient Overlay ---- */
+.hero-gradient-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(10, 10, 10, 0.1) 30%,
+    rgba(10, 10, 10, 0.4) 55%,
+    rgba(10, 10, 10, 0.85) 80%,
+    var(--bg-primary) 100%
+  );
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* ---- Content Overlay ---- */
+.hero-content {
+  position: relative;
+  z-index: 5;
+  max-width: 620px;
+  padding: var(--space-3xl) var(--space-3xl) var(--space-4xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.hero-content-enter {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.hero-content-exit {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+/* ---- Japanese Title ---- */
+.hero-japanese-title {
+  font-size: var(--font-sm);
+  color: var(--accent-gold);
+  letter-spacing: 2px;
+  font-weight: 500;
+  opacity: 0.85;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+}
+
+/* ---- Main Title ---- */
+.hero-title {
+  font-size: 3rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.1;
+  letter-spacing: -0.5px;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.7);
+  margin: 0;
+}
+
+/* ---- Info Row ---- */
+.hero-info-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.hero-score-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--accent-gold);
+  color: #000;
+  font-size: var(--font-xs);
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.3px;
+}
+
+.hero-score-badge svg {
+  fill: #000;
+}
+
+.hero-type-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-glass-light);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.hero-season-badge,
+.hero-duration-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-glass-light);
+  border: 1px solid var(--border-subtle);
+}
+
+/* ---- Genres ---- */
+.hero-genres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+/* ---- Synopsis ---- */
+.hero-synopsis-wrapper {
+  margin-top: var(--space-xs);
+}
+
+.hero-synopsis {
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+  line-height: 1.65;
+  max-width: 580px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  transition: all var(--transition-base);
+  position: relative;
+}
+
+.hero-synopsis.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-synopsis.expanded {
+  -webkit-line-clamp: unset;
+  display: block;
+  overflow: visible;
+}
+
+.hero-read-more {
+  display: inline-block;
+  margin-top: var(--space-xs);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--accent-gold);
+  letter-spacing: 1px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  transition: color var(--transition-fast);
+}
+
+.hero-read-more:hover {
+  color: var(--accent-gold-light);
+  text-decoration: underline;
+}
+
+/* ---- CTA Buttons ---- */
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.hero-btn {
+  padding: var(--space-sm) var(--space-xl);
+  font-size: var(--font-sm);
+  border-radius: var(--radius-md);
+}
+
+/* ============================================
+   Navigation Arrows
+   ============================================ */
+.hero-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 50px;
+  height: 50px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 20, 20, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  opacity: 0;
+}
+
+.hero-banner:hover .hero-arrow {
+  opacity: 1;
+}
+
+.hero-arrow:hover {
+  background: rgba(228, 168, 93, 0.15);
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+  transform: translateY(-50%) scale(1.08);
+  box-shadow: 0 0 20px rgba(228, 168, 93, 0.15);
+}
+
+.hero-arrow-left {
+  left: 20px;
+}
+
+.hero-arrow-right {
+  right: 20px;
+}
+
+/* ============================================
+   Dot Indicators
+   ============================================ */
+.hero-dots {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hero-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  border: none;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  position: relative;
+}
+
+.hero-dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: var(--radius-full);
+}
+
+.hero-dot:hover {
+  background: rgba(255, 255, 255, 0.6);
+  transform: scale(1.2);
+}
+
+.hero-dot.active {
+  background: var(--accent-gold);
+  width: 28px;
+  border-radius: 5px;
+  box-shadow: 0 0 10px rgba(228, 168, 93, 0.4);
+}
+
+/* ============================================
+   Home Sections (Anime Rows)
+   ============================================ */
+.home-sections {
+  position: relative;
+  z-index: 5;
+  padding: var(--space-xl) 0 var(--space-4xl);
+  margin-top: -40px;
+}
+
+/* ============================================
+   Crossfade Animation Keyframes
+   ============================================ */
+@keyframes heroBgFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(1.15);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes heroContentFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hero-bg-enter {
+  animation: heroBgFadeIn 0.8s ease forwards;
+}
+
+.hero-content-enter {
+  animation: heroContentFadeIn 0.6s ease 0.15s forwards;
+  opacity: 0;
+}
+
+/* ============================================
+   Responsive — Tablet
+   ============================================ */
+@media (max-width: 1024px) {
+  .hero-title {
+    font-size: 2.4rem;
+  }
+
+  .hero-content {
+    max-width: 520px;
+    padding: var(--space-2xl) var(--space-2xl) var(--space-3xl);
+  }
+
+  .hero-arrow {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* ============================================
+   Responsive — Mobile
+   ============================================ */
+@media (max-width: 768px) {
+  .hero-banner {
+    height: 55vh;
+    min-height: 420px;
+  }
+
+  .hero-content {
+    max-width: 100%;
+    padding: var(--space-xl) var(--space-lg) var(--space-2xl);
+    gap: var(--space-sm);
+  }
+
+  .hero-title {
+    font-size: 1.8rem;
+    line-height: 1.15;
+  }
+
+  .hero-japanese-title {
+    font-size: var(--font-xs);
+  }
+
+  .hero-info-row {
+    gap: 6px;
+  }
+
+  .hero-score-badge,
+  .hero-type-badge,
+  .hero-season-badge,
+  .hero-duration-badge {
+    font-size: 0.65rem;
+    padding: 2px 7px;
+  }
+
+  .hero-genres {
+    gap: 6px;
+  }
+
+  .hero-genres .genre-tag {
+    font-size: 0.6rem;
+    padding: 3px 8px;
+  }
+
+  .hero-synopsis {
+    font-size: var(--font-xs);
+    -webkit-line-clamp: 2;
+  }
+
+  .hero-actions {
+    gap: var(--space-sm);
+  }
+
+  .hero-btn {
+    padding: var(--space-sm) var(--space-lg);
+    font-size: var(--font-xs);
+  }
+
+  .hero-arrow {
+    width: 38px;
+    height: 38px;
+    opacity: 1;
+  }
+
+  .hero-arrow-left {
+    left: 10px;
+  }
+
+  .hero-arrow-right {
+    right: 10px;
+  }
+
+  .hero-dots {
+    bottom: 16px;
+    gap: 8px;
+  }
+
+  .hero-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  .hero-dot.active {
+    width: 22px;
+  }
+
+  .home-sections {
+    padding: var(--space-lg) 0 var(--space-3xl);
+    margin-top: -20px;
+  }
+}
+
+/* ============================================
+   Responsive — Small Mobile
+   ============================================ */
+@media (max-width: 480px) {
+  .hero-banner {
+    height: 50vh;
+    min-height: 360px;
+  }
+
+  .hero-title {
+    font-size: 1.5rem;
+  }
+
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-btn {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .status-badge {
+    font-size: 0.6rem;
+  }
+}
