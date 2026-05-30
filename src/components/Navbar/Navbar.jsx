@@ -47,12 +47,16 @@ export default function Navbar({ onShowAuth }) {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     const q = searchQuery.trim();
     if (q.length < 2) {
-      setSearchResults([]);
-      setShowSearchResults(false);
+      Promise.resolve().then(() => {
+        setSearchResults([]);
+        setShowSearchResults(false);
+      });
       return;
     }
-    setSearchLoading(true);
-    setShowSearchResults(true);
+    Promise.resolve().then(() => {
+      setSearchLoading(true);
+      setShowSearchResults(true);
+    });
     searchTimerRef.current = setTimeout(async () => {
       try {
         const res = await searchAnime({ q, limit: 6, sfw: true });

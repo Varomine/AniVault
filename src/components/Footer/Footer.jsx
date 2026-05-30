@@ -12,22 +12,10 @@ export default function Footer() {
           AniVault
         </Link>
 
-        {/* Links */}
-        <nav className="footer-links">
-          <Link to="/" className="footer-link">Home</Link>
-          <Link to="/browse" className="footer-link">Browse</Link>
-          <Link to="/schedule" className="footer-link">Schedule</Link>
-        </nav>
-
-        {/* Info */}
-        <div className="footer-info">
-          <span className="footer-powered">
-            Powered by Jikan API &amp; AniList
-          </span>
-          <span className="footer-copy">
-            &copy; {currentYear} AniVault. All rights reserved.
-          </span>
-        </div>
+        {/* Copy */}
+        <span className="footer-copy">
+          &copy; {currentYear} AniVault. All rights reserved.
+        </span>
       </div>
     </footer>
   );

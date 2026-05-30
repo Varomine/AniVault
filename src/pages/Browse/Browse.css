@@ -311,6 +311,7 @@
   margin: 0 auto;
   width: 100%;
   padding: 0 var(--space-xl);
+  align-items: flex-start;
 }
 
 /* ============================================
@@ -503,10 +504,27 @@
   padding: var(--space-xl) var(--space-xl) var(--space-xl) 0;
   border-right: 1px solid var(--border-subtle);
   position: sticky;
-  top: calc(var(--navbar-height) + 65px);
-  max-height: calc(100vh - var(--navbar-height) - 65px);
+  top: calc(var(--navbar-height) + var(--space-md));
+  max-height: calc(100vh - var(--navbar-height) - var(--space-xl));
   overflow-y: auto;
-  align-self: flex-start;
+}
+
+/* Custom scrollbar for sticky sidebar */
+.browse-filters-sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.browse-filters-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.browse-filters-sidebar::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--radius-full);
+}
+
+.browse-filters-sidebar::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-gold);
 }
 
 .browse-sidebar-title {
@@ -680,12 +698,12 @@
   }
 
   .browse-results-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
     gap: var(--space-lg);
   }
 
   .browse-skeleton-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
     gap: var(--space-lg);
   }
 }
@@ -713,12 +731,12 @@
   }
 
   .browse-results-grid {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
     gap: var(--space-md);
   }
 
   .browse-skeleton-grid {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
     gap: var(--space-md);
   }
 
@@ -739,12 +757,12 @@
   }
 
   .browse-results-grid {
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-    gap: var(--space-sm);
+    grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+    gap: var(--space-md);
   }
 
   .browse-skeleton-grid {
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-    gap: var(--space-sm);
+    grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+    gap: var(--space-md);
   }
 }

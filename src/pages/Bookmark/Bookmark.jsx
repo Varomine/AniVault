@@ -31,6 +31,7 @@ export default function Bookmark({ onShowAuth }) {
 
   const fetchBookmarks = useCallback(async () => {
     if (!user) return;
+    await Promise.resolve();
     try {
       setLoading(true);
       const data = await getBookmarks(user.uid);
@@ -44,9 +45,9 @@ export default function Bookmark({ onShowAuth }) {
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetchBookmarks();
+      Promise.resolve().then(() => fetchBookmarks());
     } else {
-      setLoading(false);
+      Promise.resolve().then(() => setLoading(false));
     }
   }, [isAuthenticated, fetchBookmarks]);
 

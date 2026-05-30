@@ -52,7 +52,7 @@ export async function isBookmarked(userId, animeId) {
     const docRef = getBookmarkDocRef(userId, animeId);
     const snap = await getDoc(docRef);
     return snap.exists();
-  } catch (error) {
+  } catch {
     return false;
   }
 }

@@ -40,6 +40,7 @@ export default function Schedule() {
   const today = getCurrentDayName();
 
   const fetchSchedule = useCallback(async () => {
+    await Promise.resolve();
     try {
       setLoading(true);
       setError(null);
@@ -54,7 +55,7 @@ export default function Schedule() {
   }, []);
 
   useEffect(() => {
-    fetchSchedule();
+    Promise.resolve().then(() => fetchSchedule());
   }, [fetchSchedule]);
 
   // Update countdown every 60 seconds
@@ -148,7 +149,7 @@ export default function Schedule() {
           ) : (
             <div className="schedule-grid">
               {entries.map((entry, index) => {
-                const { media, airingAt, episode, timeUntilAiring } = entry;
+                const { media, airingAt, episode } = entry;
                 const title = media.title?.english || media.title?.romaji || 'Untitled';
                 const studio = getStudioName(media);
                 const score = getDisplayScore(media.averageScore);

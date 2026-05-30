@@ -12,7 +12,7 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--space-lg);
-  padding: 0 var(--space-xs);
+  padding: 0 var(--space-xl);
 }
 
 .anime-row-title {
@@ -52,7 +52,7 @@
   overflow-y: hidden;
   scroll-behavior: smooth;
   scroll-snap-type: x proximity;
-  padding: var(--space-sm) var(--space-xs);
+  padding: var(--space-sm) var(--space-xl);
   /* hide scrollbar */
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -107,11 +107,11 @@
 }
 
 .anime-row-arrow.left {
-  left: -8px;
+  left: 8px;
 }
 
 .anime-row-arrow.right {
-  right: -8px;
+  right: 8px;
 }
 
 .anime-row-arrow.hidden {
@@ -145,12 +145,20 @@
    Responsive
    ============================================ */
 @media (max-width: 768px) {
+  .anime-row-header {
+    padding: 0 var(--space-lg);
+  }
+
+  .anime-row-container {
+    padding: var(--space-sm) var(--space-lg);
+  }
+
   .anime-row-container .anime-card {
-    min-width: 150px;
+    min-width: 170px;
   }
 
   .anime-row-skeleton-card {
-    min-width: 150px;
+    min-width: 170px;
   }
 
   .anime-row-arrow {
@@ -163,12 +171,20 @@
 }
 
 @media (max-width: 480px) {
+  .anime-row-header {
+    padding: 0 var(--space-md);
+  }
+
+  .anime-row-container {
+    padding: var(--space-sm) var(--space-md);
+  }
+
   .anime-row-container .anime-card {
-    min-width: 130px;
+    min-width: 150px;
   }
 
   .anime-row-skeleton-card {
-    min-width: 130px;
+    min-width: 150px;
   }
 
   .anime-row {

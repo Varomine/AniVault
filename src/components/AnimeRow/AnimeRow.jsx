@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import AnimeCard from '../AnimeCard/AnimeCard.jsx';
 import './AnimeRow.css';
 
-export default function AnimeRow({ title, anime = [], loading, viewAllLink, onViewAll }) {
+export default function AnimeRow({ title, anime = [], loading, viewAllLink, onViewAll, onBookmark, bookmarkedIds = [] }) {
   const containerRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
@@ -83,7 +83,12 @@ export default function AnimeRow({ title, anime = [], loading, viewAllLink, onVi
         {/* Card Container */}
         <div className="anime-row-container" ref={containerRef}>
           {anime.map((item) => (
-            <AnimeCard key={item.mal_id} anime={item} />
+            <AnimeCard
+              key={item.mal_id}
+              anime={item}
+              onBookmark={onBookmark}
+              isBookmarked={bookmarkedIds.includes(item.mal_id)}
+            />
           ))}
         </div>
 

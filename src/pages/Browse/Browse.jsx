@@ -4,6 +4,8 @@ import { Search, X, Filter, ChevronLeft, ChevronRight, SlidersHorizontal, Check 
 import AnimeCard from '../../components/AnimeCard/AnimeCard';
 import { searchAnime, getSeasonalAnime, getGenres } from '../../services/jikanApi';
 import useDebounce from '../../hooks/useDebounce';
+import { useAuth } from '../../contexts/AuthContext';
+import { addBookmark, removeBookmark, getBookmarks } from '../../services/bookmarkService';
 import './Browse.css';
 
 // ---- Constants ----
@@ -47,8 +49,53 @@ function serializeArrayParam(arr) {
   return arr.length > 0 ? arr.join(',') : '';
 }
 
-export default function Browse() {
+export default function Browse({ onShowAuth }) {
   const [searchParams, setSearchParams] = useSearchParams();
+
+  const { user, isAuthenticated } = useAuth();
+  const [userBookmarks, setUserBookmarks] = useState([]);
+
+  // Fetch all user bookmarks
+  useEffect(() => {
+    let active = true;
+    const fetchBookmarks = async () => {
+      if (isAuthenticated && user) {
+        try {
+          const list = await getBookmarks(user.uid);
+          if (active) {
+            setUserBookmarks(list.map((b) => b.mal_id));
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      } else {
+        if (active) setUserBookmarks([]);
+      }
+    };
+    fetchBookmarks();
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated, user]);
+
+  const handleCardBookmark = useCallback(async (animeItem) => {
+    if (!isAuthenticated) {
+      if (onShowAuth) onShowAuth();
+      return;
+    }
+    const isBooked = userBookmarks.includes(animeItem.mal_id);
+    try {
+      if (isBooked) {
+        await removeBookmark(user.uid, animeItem.mal_id);
+        setUserBookmarks(prev => prev.filter(id => id !== animeItem.mal_id));
+      } else {
+        await addBookmark(user.uid, animeItem);
+        setUserBookmarks(prev => [...prev, animeItem.mal_id]);
+      }
+    } catch (err) {
+      console.error('Failed to toggle card bookmark:', err);
+    }
+  }, [isAuthenticated, user, userBookmarks, onShowAuth]);
 
   // ---- Read initial state from URL ----
   const initialGenres = parseArrayParam(searchParams.get('genres'));
@@ -566,7 +613,12 @@ export default function Browse() {
             <>
               <div className="browse-results-grid">
                 {animeList.map((anime) => (
-                  <AnimeCard key={anime.mal_id} anime={anime} />
+                  <AnimeCard
+                    key={anime.mal_id}
+                    anime={anime}
+                    onBookmark={handleCardBookmark}
+                    isBookmarked={userBookmarks.includes(anime.mal_id)}
+                  />
                 ))}
               </div>
 

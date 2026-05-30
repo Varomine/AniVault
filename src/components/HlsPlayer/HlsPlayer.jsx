@@ -1,16 +1,28 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import './HlsPlayer.css';
 
-/**
- * Premium HLS Video Player
- * - Beautiful custom controls with gold accent theme
- * - Built-in quality selector (Auto + all available qualities)
- * - iOS fullscreen support (webkit + standard)
- * - Skip intro/outro buttons
- * - Auto-hide controls
- * - Keyboard shortcuts
- */
-export default function HlsPlayer({ sources, initialQuality, poster, title, intro, outro, onError }) {
+// Detect actual Safari/iOS (not Chrome pretending)
+const IS_SAFARI = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const USE_NATIVE_HLS = IS_SAFARI || IS_IOS;
+
+// Pre-load hls.js immediately if not Safari
+let hlsPromise = null;
+function preloadHls() {
+  if (hlsPromise) return hlsPromise;
+  if (window.Hls) { hlsPromise = Promise.resolve(window.Hls); return hlsPromise; }
+  hlsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js';
+    s.onload = () => resolve(window.Hls);
+    s.onerror = () => reject(new Error('Failed to load hls.js'));
+    document.head.appendChild(s);
+  });
+  return hlsPromise;
+}
+if (!USE_NATIVE_HLS) preloadHls(); // start loading immediately
+
+export default function HlsPlayer({ sources, poster, intro, outro, initialTime = 0, onProgress }) {
   const containerRef = useRef(null);
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
@@ -28,19 +40,37 @@ export default function HlsPlayer({ sources, initialQuality, poster, title, intr
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showQualityMenu, setShowQualityMenu] = useState(false);
-  const [currentQuality, setCurrentQuality] = useState(initialQuality || 'auto');
+  const [currentQuality, setCurrentQuality] = useState('auto');
   const [showSkipIntro, setShowSkipIntro] = useState(false);
   const [showSkipOutro, setShowSkipOutro] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
-  // Build sources map: { quality: streamUrl }
-  const qualityOptions = sources && sources.length > 0
-    ? ['auto', ...sources.map(s => s.quality)]
-    : ['auto'];
+  const introRef = useRef(intro);
+  const outroRef = useRef(outro);
+  const onProgressRef = useRef(onProgress);
+  const lastProgressSaveRef = useRef(0);
+  const lastTimeRef = useRef(initialTime);
+
+  useEffect(() => {
+    introRef.current = intro;
+    outroRef.current = outro;
+  }, [intro, outro]);
+
+  useEffect(() => {
+    onProgressRef.current = onProgress;
+  }, [onProgress]);
+
+  useEffect(() => {
+    lastTimeRef.current = initialTime;
+  }, [sources, initialTime]);
+
+  const qualityOptions = sources?.length > 0
+    ? (sources.length > 1 ? ['auto', ...sources.map(s => s.quality)] : [sources[0].quality])
+    : [];
 
   const getStreamUrl = useCallback((quality) => {
-    if (!sources || sources.length === 0) return null;
-    if (quality === 'auto') {
-      // Auto = best quality
+    if (!sources?.length) return null;
+    if (quality === 'auto' || !sources.find(s => s.quality === quality)) {
       const priority = ['1080p', '720p', '480p', '360p'];
       for (const q of priority) {
         const s = sources.find(src => src.quality === q);
@@ -48,83 +78,60 @@ export default function HlsPlayer({ sources, initialQuality, poster, title, intr
       }
       return sources[0]?.streamUrl;
     }
-    const match = sources.find(s => s.quality === quality);
-    return match?.streamUrl || null;
+    return sources.find(s => s.quality === quality)?.streamUrl || null;
   }, [sources]);
 
-  // ---- Destroy HLS ----
   const destroyHls = useCallback(() => {
-    if (hlsRef.current) {
-      hlsRef.current.destroy();
-      hlsRef.current = null;
-    }
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
   }, []);
 
-  // ---- Load hls.js from CDN ----
-  const loadHlsScript = useCallback(() => {
-    return new Promise((resolve, reject) => {
-      if (window.Hls) { resolve(window.Hls); return; }
-      let script = document.querySelector('script[data-hls-js]');
-      if (script) {
-        if (window.Hls) { resolve(window.Hls); return; }
-        const onLoad = () => { resolve(window.Hls); };
-        script.addEventListener('load', onLoad, { once: true });
-        script.addEventListener('error', () => reject(new Error('hls.js failed')), { once: true });
-        return;
-      }
-      script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js';
-      script.setAttribute('data-hls-js', 'true');
-      script.onload = () => resolve(window.Hls);
-      script.onerror = () => reject(new Error('Failed to load hls.js'));
-      document.head.appendChild(script);
-    });
-  }, []);
-
-  // ---- Initialize HLS when sources or quality changes ----
+  // ---- MAIN: Initialize player ----
   useEffect(() => {
     const streamUrl = getStreamUrl(currentQuality);
-    if (!streamUrl) { setLoading(false); return; }
+    if (!streamUrl) {
+      Promise.resolve().then(() => setLoading(false));
+      return;
+    }
 
     const video = videoRef.current;
     if (!video) return;
 
-    setError(null);
-    setLoading(true);
-
-    // Save current time for quality switch
-    const savedTime = video.currentTime || 0;
-    const wasPlaying = !video.paused;
+    Promise.resolve().then(() => {
+      setError(null);
+      setLoading(true);
+    });
 
     video.pause();
 
-    // Native HLS (Safari/iOS)
-    const canPlayNatively = video.canPlayType('application/vnd.apple.mpegurl') ||
-                            video.canPlayType('application/x-mpegURL');
+    const resumePlayback = () => {
+      setLoading(false);
+      const targetTime = lastTimeRef.current;
+      if (targetTime > 1) video.currentTime = targetTime;
+      video.play().catch(() => {});
+    };
 
-    if (canPlayNatively) {
+    // Safari / iOS: native HLS
+    if (USE_NATIVE_HLS) {
       destroyHls();
       video.src = streamUrl;
-      const onLoaded = () => {
-        setLoading(false);
-        if (savedTime > 1) video.currentTime = savedTime;
-        if (wasPlaying || savedTime < 1) video.play().catch(() => {});
-      };
-      video.addEventListener('loadeddata', onLoaded, { once: true });
+      video.addEventListener('loadeddata', resumePlayback, { once: true });
       video.addEventListener('error', () => {
-        setError('Playback failed.');
+        // Retry with different quality or show error
+        if (sources?.length > 1 && currentQuality === 'auto') {
+          const fallback = sources.find(s => s.quality === '720p') || sources[1];
+          if (fallback) { setCurrentQuality(fallback.quality); return; }
+        }
+        setError('Playback failed');
         setLoading(false);
       }, { once: true });
       return () => destroyHls();
     }
 
-    // hls.js for Chrome/Firefox/Edge
+    // Chrome / Firefox / Edge: hls.js
     let cancelled = false;
-    loadHlsScript().then((Hls) => {
-      if (cancelled) return;
-      if (!Hls.isSupported()) {
-        setError('Your browser does not support HLS video.');
-        setLoading(false);
+    preloadHls().then((Hls) => {
+      if (cancelled || !Hls.isSupported()) {
+        if (!cancelled) { setError('Browser not supported'); setLoading(false); }
         return;
       }
 
@@ -133,18 +140,27 @@ export default function HlsPlayer({ sources, initialQuality, poster, title, intr
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
-        maxBufferLength: 60,
-        maxMaxBufferLength: 120,
-        maxBufferSize: 60 * 1000 * 1000,
+        // Fast startup
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        maxBufferSize: 30 * 1000 * 1000,
         maxBufferHole: 0.5,
         startLevel: -1,
-        capLevelToPlayerSize: true,
-        fragLoadingMaxRetry: 6,
-        manifestLoadingMaxRetry: 4,
-        levelLoadingMaxRetry: 4,
-        backBufferLength: 90,
+        // Aggressive loading for speed
+        maxLoadingDelay: 4,
+        maxFragLookUpTolerance: 0.25,
+        // Retries
+        fragLoadingMaxRetry: 10,
+        fragLoadingRetryDelay: 500,
+        manifestLoadingMaxRetry: 6,
+        manifestLoadingRetryDelay: 500,
+        levelLoadingMaxRetry: 6,
+        // Seeking
+        backBufferLength: 30,
         nudgeOffset: 0.2,
-        nudgeMaxRetry: 5,
+        nudgeMaxRetry: 10,
+        // Ensure .ts segment support
+        enableSoftwareAES: true,
       });
 
       hlsRef.current = hls;
@@ -153,138 +169,179 @@ export default function HlsPlayer({ sources, initialQuality, poster, title, intr
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (cancelled) return;
-        setLoading(false);
-        if (savedTime > 1) video.currentTime = savedTime;
-        if (wasPlaying || savedTime < 1) video.play().catch(() => {});
+        resumePlayback();
       });
 
-      let recoverAttempts = 0;
+      // Error handling — be aggressive about recovery, don't show error easily
+      let mediaRecoverCount = 0;
+      let networkRecoverCount = 0;
+
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (cancelled) return;
-        if (data.fatal) {
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            hls.startLoad();
-          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            recoverAttempts++;
-            if (recoverAttempts <= 3) hls.recoverMediaError();
-            else { hls.detachMedia(); hls.attachMedia(video); hls.loadSource(streamUrl); recoverAttempts = 0; }
+        console.warn('[HLS]', data.type, data.details, data.fatal ? 'FATAL' : '');
+
+        if (!data.fatal) return; // non-fatal, hls.js handles it
+
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          mediaRecoverCount++;
+          if (mediaRecoverCount <= 3) {
+            console.log('[HLS] recoverMediaError attempt', mediaRecoverCount);
+            hls.recoverMediaError();
+          } else if (mediaRecoverCount <= 5) {
+            // Nuclear: swap codec
+            console.log('[HLS] swapAudioCodec + recover attempt', mediaRecoverCount);
+            hls.swapAudioCodec();
+            hls.recoverMediaError();
           } else {
-            setError('Playback failed. Try refreshing.');
+            // Full reload
+            console.log('[HLS] full reload');
+            mediaRecoverCount = 0;
+            hls.destroy();
+            const hls2 = new Hls({ enableWorker: true, enableSoftwareAES: true });
+            hlsRef.current = hls2;
+            hls2.loadSource(streamUrl);
+            hls2.attachMedia(video);
+            hls2.on(Hls.Events.MANIFEST_PARSED, () => { if (!cancelled) video.play().catch(() => {}); });
+          }
+        } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          networkRecoverCount++;
+          if (networkRecoverCount <= 5) {
+            console.log('[HLS] network recovery attempt', networkRecoverCount);
+            setTimeout(() => { if (!cancelled) hls.startLoad(); }, 1000 * networkRecoverCount);
+          } else {
+            setError('Network error — check your connection');
             setLoading(false);
           }
+        } else {
+          setError('Playback failed');
+          setLoading(false);
         }
       });
 
       // Stall recovery
       let stallTimer = null;
-      const handleWaiting = () => {
+      const onWaiting = () => {
         if (stallTimer) clearTimeout(stallTimer);
         stallTimer = setTimeout(() => {
-          if (video.paused || !hls) return;
-          const t = video.currentTime;
-          hls.recoverMediaError();
-          setTimeout(() => { if (Math.abs(video.currentTime - t) < 0.5) video.currentTime = t + 0.5; }, 1000);
-        }, 8000);
+          if (video.paused || !hlsRef.current) return;
+          console.log('[HLS] stall detected, recovering...');
+          hlsRef.current.recoverMediaError();
+        }, 6000);
       };
-      const handlePlaying = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } };
-      video.addEventListener('waiting', handleWaiting);
-      video.addEventListener('playing', handlePlaying);
-    }).catch((err) => {
-      if (cancelled) return;
-      setError('Failed to load player.');
-      setLoading(false);
+      const onPlaying = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } };
+      video.addEventListener('waiting', onWaiting);
+      video.addEventListener('playing', onPlaying);
+
+      return () => {
+        video.removeEventListener('waiting', onWaiting);
+        video.removeEventListener('playing', onPlaying);
+        if (stallTimer) clearTimeout(stallTimer);
+      };
+    }).catch(() => {
+      if (!cancelled) { setError('Failed to load player'); setLoading(false); }
     });
 
     return () => { cancelled = true; destroyHls(); };
-  }, [currentQuality, sources, getStreamUrl, destroyHls, loadHlsScript]);
+  }, [currentQuality, sources, retryCount, getStreamUrl, destroyHls]);
 
-  // ---- Video event listeners ----
+  // ---- Video events ----
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
-    const onTimeUpdate = () => {
-      setCurrentTime(video.currentTime);
-      // Buffered
-      if (video.buffered.length > 0) {
-        setBuffered(video.buffered.end(video.buffered.length - 1));
+    const triggerProgress = (time, dur) => {
+      if (onProgressRef.current && dur) {
+        onProgressRef.current(time, dur);
       }
-      // Skip intro/outro
-      const t = video.currentTime;
-      setShowSkipIntro(intro && t >= intro.start && t < intro.end);
-      setShowSkipOutro(outro && t >= outro.start && t < outro.end);
     };
-    const onDurationChange = () => setDuration(video.duration || 0);
-    const onVolumeChange = () => { setVolume(video.volume); setMuted(video.muted); };
-    const onEnded = () => setPlaying(false);
 
+    const onPlay = () => setPlaying(true);
+    const onPause = () => {
+      setPlaying(false);
+      triggerProgress(video.currentTime, video.duration);
+    };
+    const onTime = () => {
+      const t = video.currentTime;
+      if (video.readyState === 0) return;
+      setCurrentTime(t);
+      lastTimeRef.current = t;
+      if (video.buffered.length > 0) setBuffered(video.buffered.end(video.buffered.length - 1));
+      
+      const currentIntro = introRef.current;
+      const currentOutro = outroRef.current;
+      setShowSkipIntro(!!(currentIntro && t >= currentIntro.start && t < currentIntro.end));
+      setShowSkipOutro(!!(currentOutro && t >= currentOutro.start && t < currentOutro.end));
+
+      const now = Date.now();
+      if (now - lastProgressSaveRef.current > 4000) {
+        lastProgressSaveRef.current = now;
+        triggerProgress(t, video.duration);
+      }
+    };
+    const onDur = () => setDuration(video.duration || 0);
+    const onVol = () => { setVolume(video.volume); setMuted(video.muted); };
+    const onEnd = () => {
+      setPlaying(false);
+      triggerProgress(video.currentTime, video.duration);
+    };
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
-    video.addEventListener('timeupdate', onTimeUpdate);
-    video.addEventListener('durationchange', onDurationChange);
-    video.addEventListener('volumechange', onVolumeChange);
-    video.addEventListener('ended', onEnded);
-
+    video.addEventListener('timeupdate', onTime);
+    video.addEventListener('durationchange', onDur);
+    video.addEventListener('volumechange', onVol);
+    video.addEventListener('ended', onEnd);
     return () => {
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
-      video.removeEventListener('timeupdate', onTimeUpdate);
-      video.removeEventListener('durationchange', onDurationChange);
-      video.removeEventListener('volumechange', onVolumeChange);
-      video.removeEventListener('ended', onEnded);
+      video.removeEventListener('timeupdate', onTime);
+      video.removeEventListener('durationchange', onDur);
+      video.removeEventListener('volumechange', onVol);
+      video.removeEventListener('ended', onEnd);
     };
-  }, [intro, outro]);
+  }, []);
 
   // ---- Auto-hide controls ----
   const resetControlsTimer = useCallback(() => {
-    setShowControls(true);
+    Promise.resolve().then(() => setShowControls(true));
     if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
-    controlsTimerRef.current = setTimeout(() => {
-      if (playing) setShowControls(false);
-    }, 3500);
+    controlsTimerRef.current = setTimeout(() => { if (playing) setShowControls(false); }, 3500);
   }, [playing]);
 
   useEffect(() => {
-    if (!playing) { setShowControls(true); return; }
+    if (!playing) {
+      Promise.resolve().then(() => setShowControls(true));
+      return;
+    }
     resetControlsTimer();
     return () => { if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current); };
   }, [playing, resetControlsTimer]);
 
   // ---- Fullscreen ----
   const toggleFullscreen = useCallback(() => {
-    const container = containerRef.current;
-    const video = videoRef.current;
-    if (!container) return;
-
+    const c = containerRef.current;
+    const v = videoRef.current;
+    if (!c) return;
     if (document.fullscreenElement || document.webkitFullscreenElement) {
       (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
     } else {
-      // Try container fullscreen first (shows custom controls)
-      if (container.requestFullscreen) container.requestFullscreen();
-      else if (container.webkitRequestFullscreen) container.webkitRequestFullscreen();
-      // iOS Safari: use video element's native fullscreen
-      else if (video?.webkitEnterFullscreen) video.webkitEnterFullscreen();
+      if (c.requestFullscreen) c.requestFullscreen();
+      else if (c.webkitRequestFullscreen) c.webkitRequestFullscreen();
+      else if (v?.webkitEnterFullscreen) v.webkitEnterFullscreen();
     }
   }, []);
 
   useEffect(() => {
-    const onChange = () => setIsFullscreen(!!(document.fullscreenElement || document.webkitFullscreenElement));
-    document.addEventListener('fullscreenchange', onChange);
-    document.addEventListener('webkitfullscreenchange', onChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', onChange);
-      document.removeEventListener('webkitfullscreenchange', onChange);
-    };
+    const fn = () => setIsFullscreen(!!(document.fullscreenElement || document.webkitFullscreenElement));
+    document.addEventListener('fullscreenchange', fn);
+    document.addEventListener('webkitfullscreenchange', fn);
+    return () => { document.removeEventListener('fullscreenchange', fn); document.removeEventListener('webkitfullscreenchange', fn); };
   }, []);
 
   // ---- Player actions ----
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) v.play().catch(() => {});
-    else v.pause();
+    v.paused ? v.play().catch(() => {}) : v.pause();
   }, []);
 
   const seek = useCallback((e) => {
@@ -296,6 +353,17 @@ export default function HlsPlayer({ sources, initialQuality, poster, title, intr
     v.currentTime = pct * duration;
   }, [duration]);
 
+  const handleTouchSeek = useCallback((e) => {
+    const v = videoRef.current;
+    const bar = progressRef.current;
+    if (!v || !bar || !duration) return;
+    const rect = bar.getBoundingClientRect();
+    const touch = e.touches[0] || e.changedTouches[0];
+    if (!touch) return;
+    const pct = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+    v.currentTime = pct * duration;
+  }, [duration]);
+
   const handleVolumeChange = useCallback((e) => {
     const v = videoRef.current;
     if (!v) return;
@@ -304,258 +372,178 @@ export default function HlsPlayer({ sources, initialQuality, poster, title, intr
     v.muted = val === 0;
   }, []);
 
-  const toggleMute = useCallback(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    v.muted = !v.muted;
+  const toggleMute = useCallback(() => { const v = videoRef.current; if (v) v.muted = !v.muted; }, []);
+  const skipIntro = useCallback(() => {
+    const currentIntro = introRef.current;
+    if (videoRef.current && currentIntro) {
+      videoRef.current.currentTime = currentIntro.end;
+      setShowSkipIntro(false);
+    }
   }, []);
 
-  const skipIntro = useCallback(() => {
-    if (videoRef.current && intro) { videoRef.current.currentTime = intro.end; setShowSkipIntro(false); }
-  }, [intro]);
-
   const skipOutro = useCallback(() => {
-    if (videoRef.current && outro) { videoRef.current.currentTime = outro.end; setShowSkipOutro(false); }
-  }, [outro]);
-
+    const currentOutro = outroRef.current;
+    if (videoRef.current && currentOutro) {
+      videoRef.current.currentTime = currentOutro.end;
+      setShowSkipOutro(false);
+    }
+  }, []);
   const switchQuality = useCallback((q) => {
+    if (videoRef.current && videoRef.current.readyState > 0) {
+      lastTimeRef.current = videoRef.current.currentTime;
+    }
     setCurrentQuality(q);
     setShowQualityMenu(false);
   }, []);
+  const handleRetry = useCallback(() => { setError(null); setRetryCount(c => c + 1); }, []);
 
-  // ---- Keyboard shortcuts ----
+  // ---- Keyboard ----
   useEffect(() => {
-    const handleKey = (e) => {
-      // Only if player is focused or in fullscreen
+    const fn = (e) => {
       if (!containerRef.current?.contains(document.activeElement) && !isFullscreen) return;
       const v = videoRef.current;
       if (!v) return;
-
       switch (e.key) {
-        case ' ':
-        case 'k':
-          e.preventDefault();
-          togglePlay();
-          break;
-        case 'f':
-          e.preventDefault();
-          toggleFullscreen();
-          break;
-        case 'm':
-          e.preventDefault();
-          toggleMute();
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          v.currentTime = Math.max(0, v.currentTime - 10);
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          v.currentTime = Math.min(duration, v.currentTime + 10);
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          v.volume = Math.min(1, v.volume + 0.1);
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          v.volume = Math.max(0, v.volume - 0.1);
-          break;
+        case ' ': case 'k': e.preventDefault(); togglePlay(); break;
+        case 'f': e.preventDefault(); toggleFullscreen(); break;
+        case 'm': e.preventDefault(); toggleMute(); break;
+        case 'ArrowLeft': e.preventDefault(); v.currentTime = Math.max(0, v.currentTime - 10); break;
+        case 'ArrowRight': e.preventDefault(); v.currentTime = Math.min(duration, v.currentTime + 10); break;
+        case 'ArrowUp': e.preventDefault(); v.volume = Math.min(1, v.volume + 0.1); break;
+        case 'ArrowDown': e.preventDefault(); v.volume = Math.max(0, v.volume - 0.1); break;
       }
     };
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+    document.addEventListener('keydown', fn);
+    return () => document.removeEventListener('keydown', fn);
   }, [togglePlay, toggleFullscreen, toggleMute, duration, isFullscreen]);
 
-  // ---- Cleanup ----
   useEffect(() => () => destroyHls(), [destroyHls]);
 
-  // ---- Helpers ----
-  const formatTime = (seconds) => {
-    if (!seconds || isNaN(seconds)) return '0:00';
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    return `${m}:${s.toString().padStart(2, '0')}`;
+  const fmt = (s) => {
+    if (!s || isNaN(s)) return '0:00';
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+    return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
   };
 
-  const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const bufferedPct = duration > 0 ? (buffered / duration) * 100 : 0;
+  const pPct = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const bPct = duration > 0 ? (buffered / duration) * 100 : 0;
 
-  const hasSources = sources && sources.length > 0;
-
-  if (!hasSources) {
-    return (
-      <div className="vp-placeholder">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="vp-placeholder-icon">
-          <polygon points="5 3 19 12 5 21 5 3" />
-        </svg>
-        <span>No video source available</span>
-      </div>
-    );
+  if (!sources?.length) {
+    return (<div className="vp-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="vp-placeholder-icon"><polygon points="5 3 19 12 5 21 5 3" /></svg><span>No video source available</span></div>);
   }
 
   return (
-    <div
-      ref={containerRef}
-      className={`vp ${isFullscreen ? 'vp--fullscreen' : ''} ${showControls ? 'vp--show-controls' : ''}`}
-      onMouseMove={resetControlsTimer}
-      onTouchStart={resetControlsTimer}
-      onClick={(e) => {
-        // Close quality menu on outside click
-        if (showQualityMenu && !e.target.closest('.vp-quality')) setShowQualityMenu(false);
-      }}
-      tabIndex={0}
-    >
-      {/* Video Element */}
-      <video
-        ref={videoRef}
-        className="vp-video"
-        playsInline
-        webkit-playsinline=""
-        poster={poster}
-        title={title}
-        preload="auto"
-        onClick={togglePlay}
-        onDoubleClick={toggleFullscreen}
-      />
+    <div ref={containerRef} className={`vp ${isFullscreen ? 'vp--fullscreen' : ''} ${showControls ? 'vp--show-controls' : ''}`}
+      onMouseMove={resetControlsTimer} onTouchStart={resetControlsTimer}
+      onClick={(e) => { if (showQualityMenu && !e.target.closest('.vp-quality')) setShowQualityMenu(false); }}
+      tabIndex={0}>
 
-      {/* Loading Overlay */}
-      {loading && (
-        <div className="vp-overlay vp-loading">
-          <div className="vp-spinner" />
-        </div>
-      )}
+      <video ref={videoRef} className="vp-video" playsInline webkit-playsinline="" crossOrigin="anonymous"
+        poster={poster} preload="auto" onClick={togglePlay} onDoubleClick={toggleFullscreen} />
 
-      {/* Error Overlay */}
+      {loading && <div className="vp-overlay vp-loading"><div className="vp-spinner" /></div>}
+
       {error && (
         <div className="vp-overlay vp-error">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="36" height="36">
             <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
           </svg>
           <span>{error}</span>
+          <button className="vp-retry-btn" onClick={handleRetry}>↻ Retry</button>
         </div>
       )}
 
-      {/* Big Play Button (when paused & controls visible) */}
       {!playing && !loading && !error && showControls && (
         <button className="vp-big-play" onClick={togglePlay} aria-label="Play">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <polygon points="6 3 20 12 6 21 6 3" />
-          </svg>
+          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3" /></svg>
         </button>
       )}
 
-      {/* Skip Intro */}
-      {showSkipIntro && (
-        <button className="vp-skip-btn" onClick={skipIntro}>Skip Intro →</button>
-      )}
+      {showSkipIntro && <button className="vp-skip-btn" onClick={skipIntro}>Skip Intro →</button>}
+      {showSkipOutro && <button className="vp-skip-btn vp-skip-outro" onClick={skipOutro}>Skip Outro →</button>}
 
-      {/* Skip Outro */}
-      {showSkipOutro && (
-        <button className="vp-skip-btn vp-skip-outro" onClick={skipOutro}>Skip Outro →</button>
-      )}
-
-      {/* Bottom Gradient */}
       <div className={`vp-gradient ${showControls ? 'visible' : ''}`} />
 
-      {/* Controls */}
       <div className={`vp-controls ${showControls ? 'visible' : ''}`}>
-        {/* Progress Bar */}
-        <div className="vp-progress-wrapper" ref={progressRef} onClick={seek}>
+        <div
+          className="vp-progress-wrapper"
+          ref={progressRef}
+          onClick={seek}
+          onTouchStart={handleTouchSeek}
+          onTouchMove={handleTouchSeek}
+        >
           <div className="vp-progress-bar">
-            <div className="vp-progress-buffered" style={{ width: `${bufferedPct}%` }} />
-            <div className="vp-progress-played" style={{ width: `${progressPct}%` }}>
-              <div className="vp-progress-thumb" />
-            </div>
+            {intro && duration > 0 && (
+              <div
+                className="vp-progress-highlight vp-progress-intro"
+                style={{
+                  left: `${(intro.start / duration) * 100}%`,
+                  width: `${((intro.end - intro.start) / duration) * 100}%`
+                }}
+                title="Intro"
+              />
+            )}
+            {outro && duration > 0 && (
+              <div
+                className="vp-progress-highlight vp-progress-outro"
+                style={{
+                  left: `${(outro.start / duration) * 100}%`,
+                  width: `${((outro.end - outro.start) / duration) * 100}%`
+                }}
+                title="Outro"
+              />
+            )}
+            <div className="vp-progress-buffered" style={{ width: `${bPct}%` }} />
+            <div className="vp-progress-played" style={{ width: `${pPct}%` }}><div className="vp-progress-thumb" /></div>
           </div>
         </div>
 
-        {/* Controls Row */}
         <div className="vp-controls-row">
-          {/* Left Controls */}
           <div className="vp-controls-left">
-            {/* Play/Pause */}
             <button className="vp-btn" onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>
-              {playing ? (
-                <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
-                  <rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
-                  <polygon points="6 3 20 12 6 21 6 3" />
-                </svg>
-              )}
+              {playing
+                ? <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                : <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><polygon points="6 3 20 12 6 21 6 3" /></svg>}
             </button>
-
-            {/* Volume */}
             <div className="vp-volume">
               <button className="vp-btn" onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
-                {muted || volume === 0 ? (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
-                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" />
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
-                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" />{volume > 0.5 && <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />}
-                  </svg>
-                )}
+                {muted || volume === 0
+                  ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>
+                  : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" />{volume > 0.5 && <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />}</svg>}
               </button>
-              <input
-                type="range"
-                className="vp-volume-slider"
-                min="0"
-                max="1"
-                step="0.05"
-                value={muted ? 0 : volume}
-                onChange={handleVolumeChange}
-                aria-label="Volume"
-              />
+              <input type="range" className="vp-volume-slider" min="0" max="1" step="0.05" value={muted ? 0 : volume} onChange={handleVolumeChange} />
             </div>
-
-            {/* Time */}
-            <span className="vp-time">{formatTime(currentTime)} / {formatTime(duration)}</span>
+            <span className="vp-time">{fmt(currentTime)} / {fmt(duration)}</span>
           </div>
 
-          {/* Right Controls */}
           <div className="vp-controls-right">
-            {/* Quality Selector */}
-            <div className="vp-quality">
-              <button className="vp-btn vp-quality-btn" onClick={() => setShowQualityMenu(!showQualityMenu)}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
-                  <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                </svg>
-                <span className="vp-quality-label">{currentQuality === 'auto' ? 'Auto' : currentQuality}</span>
-              </button>
+            {qualityOptions.length > 1 && (
+              <div className="vp-quality">
+                <button className="vp-btn vp-quality-btn" onClick={() => setShowQualityMenu(!showQualityMenu)}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
+                    <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                  <span className="vp-quality-label">{currentQuality === 'auto' ? 'Auto' : currentQuality}</span>
+                </button>
+                {showQualityMenu && (
+                  <div className="vp-quality-menu">
+                    {qualityOptions.map(q => (
+                      <button key={q} className={`vp-quality-option ${currentQuality === q ? 'active' : ''}`} onClick={() => switchQuality(q)}>
+                        {q === 'auto' ? 'Auto' : q}
+                        {currentQuality === q && <span className="vp-quality-check">✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Show current quality badge when only 1 source */}
+            {qualityOptions.length === 1 && <span className="vp-quality-badge">{qualityOptions[0]}</span>}
 
-              {showQualityMenu && (
-                <div className="vp-quality-menu">
-                  {qualityOptions.map(q => (
-                    <button
-                      key={q}
-                      className={`vp-quality-option ${currentQuality === q ? 'active' : ''}`}
-                      onClick={() => switchQuality(q)}
-                    >
-                      {q === 'auto' ? 'Auto' : q}
-                      {currentQuality === q && <span className="vp-quality-check">✓</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Fullscreen */}
             <button className="vp-btn" onClick={toggleFullscreen} aria-label="Fullscreen">
-              {isFullscreen ? (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
-                  <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
-                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-                </svg>
-              )}
+              {isFullscreen
+                ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" /></svg>
+                : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>}
             </button>
           </div>
         </div>

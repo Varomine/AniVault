@@ -18,9 +18,18 @@ export default function AnimeCard({ anime, onClick, onBookmark, isBookmarked }) 
   const episodes = anime.episodes;
   const trailerUrl = anime.trailer?.url || '';
 
-  const handleCardClick = (e) => {
+  const progressMap = anime.progress || {};
+  const currentEpisode = anime.currentEpisode || 1;
+  const epProgress = progressMap[currentEpisode];
+  const progressPercent = epProgress && epProgress.duration > 0
+    ? (epProgress.currentTime / epProgress.duration) * 100
+    : 0;
+
+  const handleCardClick = () => {
     if (onClick) {
       onClick(anime);
+    } else if (anime.isHistory) {
+      navigate(`/watch/${anime.mal_id}/${currentEpisode}`);
     } else {
       navigate(`/anime/${anime.mal_id}`);
     }
@@ -41,7 +50,7 @@ export default function AnimeCard({ anime, onClick, onBookmark, isBookmarked }) 
   };
 
   return (
-    <div className="anime-card" onClick={handleCardClick}>
+    <div className={`anime-card${anime.isHistory ? ' anime-card--history' : ''}`} onClick={handleCardClick}>
       {/* Poster */}
       <img
         className="anime-card-image"
@@ -56,6 +65,13 @@ export default function AnimeCard({ anime, onClick, onBookmark, isBookmarked }) 
         <div className="anime-card-score">
           <Star size={11} />
           {score.toFixed(1)}
+        </div>
+      )}
+
+      {/* Episode Badge (for Continue Watching) */}
+      {anime.isHistory && currentEpisode && (
+        <div className="anime-card-episode-badge">
+          EP {currentEpisode}
         </div>
       )}
 
@@ -94,6 +110,12 @@ export default function AnimeCard({ anime, onClick, onBookmark, isBookmarked }) 
           <Bookmark size={12} fill={isBookmarked ? 'currentColor' : 'none'} />
         </button>
       </div>
+      {/* Resume Progress Bar */}
+      {progressPercent > 0 && (
+        <div className="anime-card-progress-bar">
+          <div className="anime-card-progress-fill" style={{ width: `${progressPercent}%` }} />
+        </div>
+      )}
     </div>
   );
 }

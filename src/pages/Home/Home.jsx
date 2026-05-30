@@ -7,7 +7,7 @@ import {
   Star,
   Clock,
   Calendar,
-  BookmarkPlus,
+  Bookmark,
   Eye as EyeIcon,
 } from 'lucide-react';
 import {
@@ -19,11 +19,14 @@ import {
   getStatusText,
   getStatusClass,
 } from '../../services/jikanApi';
-import { getWatchHistory } from '../../services/watchHistoryService';
+
 import AnimeRow from '../../components/AnimeRow/AnimeRow';
+import { getWatchHistory } from '../../services/watchHistoryService';
+import { useAuth } from '../../contexts/AuthContext';
+import { addBookmark, removeBookmark, isBookmarked, getBookmarks } from '../../services/bookmarkService';
 import './Home.css';
 
-function Home() {
+function Home({ onShowAuth }) {
   const navigate = useNavigate();
 
   // Hero banner state
@@ -34,17 +37,109 @@ function Home() {
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   // Section data state
-  const [continueWatching, setContinueWatching] = useState([]);
   const [trending, setTrending] = useState([]);
   const [seasonal, setSeasonal] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
+  const [continueWatching] = useState(() => getWatchHistory());
 
   // Loading states
   const [trendingLoading, setTrendingLoading] = useState(true);
   const [seasonalLoading, setSeasonalLoading] = useState(true);
   const [favoritesLoading, setFavoritesLoading] = useState(true);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
+
+  // Auth & Bookmarks state
+  const { user, isAuthenticated } = useAuth();
+  const [isBannerBookmarked, setIsBannerBookmarked] = useState(false);
+  const [userBookmarks, setUserBookmarks] = useState([]);
+  const [bookmarkLoading, setBookmarkLoading] = useState(false);
+
+  // Fetch whether current banner is bookmarked
+  useEffect(() => {
+    const checkBannerBookmark = async () => {
+      const activeAnime = bannerAnime[currentBanner];
+      if (!activeAnime) return;
+      if (isAuthenticated && user) {
+        const res = await isBookmarked(user.uid, activeAnime.mal_id);
+        setIsBannerBookmarked(res);
+      } else {
+        setIsBannerBookmarked(false);
+      }
+    };
+    checkBannerBookmark();
+  }, [currentBanner, bannerAnime, isAuthenticated, user]);
+
+  // Fetch all user bookmarks for card list rows
+  useEffect(() => {
+    let active = true;
+    const fetchBookmarks = async () => {
+      if (isAuthenticated && user) {
+        try {
+          const list = await getBookmarks(user.uid);
+          if (active) {
+            setUserBookmarks(list.map((b) => b.mal_id));
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      } else {
+        if (active) setUserBookmarks([]);
+      }
+    };
+    fetchBookmarks();
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated, user]);
+
+  const handleBannerBookmark = useCallback(async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!isAuthenticated) {
+      if (onShowAuth) onShowAuth();
+      return;
+    }
+    const activeAnime = bannerAnime[currentBanner];
+    if (!activeAnime || bookmarkLoading) return;
+    setBookmarkLoading(true);
+    try {
+      if (isBannerBookmarked) {
+        await removeBookmark(user.uid, activeAnime.mal_id);
+        setIsBannerBookmarked(false);
+        setUserBookmarks(prev => prev.filter(id => id !== activeAnime.mal_id));
+      } else {
+        await addBookmark(user.uid, activeAnime);
+        setIsBannerBookmarked(true);
+        setUserBookmarks(prev => [...prev, activeAnime.mal_id]);
+      }
+    } catch (err) {
+      console.error('Failed to toggle banner bookmark:', err);
+    } finally {
+      setBookmarkLoading(false);
+    }
+  }, [bannerAnime, currentBanner, isBannerBookmarked, bookmarkLoading, isAuthenticated, user, onShowAuth]);
+
+  const handleCardBookmark = useCallback(async (animeItem) => {
+    if (!isAuthenticated) {
+      if (onShowAuth) onShowAuth();
+      return;
+    }
+    const isBooked = userBookmarks.includes(animeItem.mal_id);
+    try {
+      if (isBooked) {
+        await removeBookmark(user.uid, animeItem.mal_id);
+        setUserBookmarks(prev => prev.filter(id => id !== animeItem.mal_id));
+      } else {
+        await addBookmark(user.uid, animeItem);
+        setUserBookmarks(prev => [...prev, animeItem.mal_id]);
+      }
+    } catch (err) {
+      console.error('Failed to toggle card bookmark:', err);
+    }
+  }, [isAuthenticated, user, userBookmarks, onShowAuth]);
+
+
 
   // Auto-rotate timer refs
   const autoRotateRef = useRef(null);
@@ -63,7 +158,7 @@ function Home() {
         setIsTransitioning(false);
       }, 500);
     }, 8000);
-  }, [bannerAnime.length]);
+  }, [bannerAnime]);
 
   // Stop auto-rotate and restart after delay
   const handleManualNavigation = useCallback(
@@ -89,13 +184,13 @@ function Home() {
     const newIndex =
       currentBanner <= 0 ? bannerAnime.length - 1 : currentBanner - 1;
     handleManualNavigation(newIndex);
-  }, [currentBanner, bannerAnime.length, handleManualNavigation]);
+  }, [currentBanner, bannerAnime, handleManualNavigation]);
 
   const goToNext = useCallback(() => {
     const newIndex =
       currentBanner >= bannerAnime.length - 1 ? 0 : currentBanner + 1;
     handleManualNavigation(newIndex);
-  }, [currentBanner, bannerAnime.length, handleManualNavigation]);
+  }, [currentBanner, bannerAnime, handleManualNavigation]);
 
   const goToDot = useCallback(
     (index) => {
@@ -143,9 +238,7 @@ function Home() {
   useEffect(() => {
     let cancelled = false;
 
-    // Continue Watching (local, no API call)
-    const history = getWatchHistory();
-    setContinueWatching(history);
+
 
     async function fetchSections() {
       // Trending
@@ -201,6 +294,8 @@ function Home() {
       cancelled = true;
     };
   }, []);
+
+
 
   // Current anime for hero
   const anime = bannerAnime[currentBanner];
@@ -336,11 +431,12 @@ function Home() {
                 )}
 
                 <button
-                  className="btn btn-secondary hero-btn"
-                  onClick={() => navigate(`/anime/${anime?.mal_id}`)}
+                  className={`btn hero-btn ${isBannerBookmarked ? 'btn-bookmark-active' : 'btn-secondary'}`}
+                  onClick={handleBannerBookmark}
+                  disabled={bookmarkLoading}
                 >
-                  <BookmarkPlus size={18} />
-                  Bookmark
+                  <Bookmark size={18} fill={isBannerBookmarked ? 'currentColor' : 'none'} />
+                  {isBannerBookmarked ? 'Bookmarked' : 'Bookmark'}
                 </button>
               </div>
             </div>
@@ -388,9 +484,18 @@ function Home() {
         {continueWatching.length > 0 && (
           <AnimeRow
             title="Continue Watching"
-            anime={continueWatching}
-            loading={false}
-            viewAllLink="/browse?filter=history"
+            anime={continueWatching.map(item => ({
+              mal_id: item.mal_id,
+              title: item.title,
+              title_english: item.title_english,
+              images: { jpg: { large_image_url: item.image, image_url: item.image } },
+              score: item.score,
+              type: item.type,
+              episodes: item.episodes,
+              currentEpisode: item.currentEpisode,
+              progress: item.progress,
+              isHistory: true
+            }))}
           />
         )}
 
@@ -400,6 +505,8 @@ function Home() {
           anime={trending}
           loading={trendingLoading}
           viewAllLink="/browse?filter=airing"
+          onBookmark={handleCardBookmark}
+          bookmarkedIds={userBookmarks}
         />
 
         {/* Popular This Season */}
@@ -408,6 +515,8 @@ function Home() {
           anime={seasonal}
           loading={seasonalLoading}
           viewAllLink="/browse?filter=season"
+          onBookmark={handleCardBookmark}
+          bookmarkedIds={userBookmarks}
         />
 
         {/* Most Favorite */}
@@ -416,6 +525,8 @@ function Home() {
           anime={favorites}
           loading={favoritesLoading}
           viewAllLink="/browse?filter=favorite"
+          onBookmark={handleCardBookmark}
+          bookmarkedIds={userBookmarks}
         />
 
         {/* Coming Soon */}
@@ -424,6 +535,8 @@ function Home() {
           anime={upcoming}
           loading={upcomingLoading}
           viewAllLink="/browse?filter=upcoming"
+          onBookmark={handleCardBookmark}
+          bookmarkedIds={userBookmarks}
         />
       </div>
     </div>

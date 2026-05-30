@@ -15,7 +15,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-xl);
+  gap: var(--space-md);
 }
 
 /* ---- Brand ---- */
@@ -29,54 +29,7 @@
   background-clip: text;
 }
 
-/* ---- Links ---- */
-.footer-links {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xl);
-}
-
-.footer-link {
-  font-size: var(--font-sm);
-  color: var(--text-secondary);
-  text-decoration: none;
-  position: relative;
-  transition: color var(--transition-fast);
-}
-
-.footer-link:hover {
-  color: var(--accent-gold);
-}
-
-.footer-link::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  width: 0;
-  height: 1px;
-  background: var(--accent-gold);
-  transition: width var(--transition-base);
-}
-
-.footer-link:hover::after {
-  width: 100%;
-}
-
-/* ---- Info Text ---- */
-.footer-info {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.footer-powered {
-  font-size: var(--font-xs);
-  color: var(--text-dim);
-  letter-spacing: 0.3px;
-}
-
+/* ---- Copy Text ---- */
 .footer-copy {
   font-size: var(--font-xs);
   color: var(--text-muted);
@@ -88,13 +41,5 @@
 @media (max-width: 480px) {
   .footer {
     padding: var(--space-2xl) var(--space-lg) var(--space-xl);
-  }
-
-  .footer-links {
-    gap: var(--space-lg);
-  }
-
-  .footer-link {
-    font-size: var(--font-xs);
   }
 }

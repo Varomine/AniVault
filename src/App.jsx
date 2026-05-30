@@ -30,16 +30,16 @@ function App() {
       <main>
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/browse" element={<Browse />} />
+            <Route path="/" element={<Home onShowAuth={() => setShowAuthModal(true)} />} />
+            <Route path="/browse" element={<Browse onShowAuth={() => setShowAuthModal(true)} />} />
             <Route path="/schedule" element={<Schedule />} />
             <Route
               path="/bookmarks"
               element={<Bookmark onShowAuth={() => setShowAuthModal(true)} />}
             />
-            <Route path="/anime/:id" element={<AnimeDetail />} />
-            <Route path="/watch/:id" element={<Streaming />} />
-            <Route path="/watch/:id/:episode" element={<Streaming />} />
+            <Route path="/anime/:id" element={<AnimeDetail onShowAuth={() => setShowAuthModal(true)} />} />
+            <Route path="/watch/:id" element={<Streaming onShowAuth={() => setShowAuthModal(true)} />} />
+            <Route path="/watch/:id/:episode" element={<Streaming onShowAuth={() => setShowAuthModal(true)} />} />
           </Routes>
         </Suspense>
       </main>

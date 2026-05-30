@@ -162,11 +162,13 @@
   opacity: 0;
   transform: translateY(4px);
   transition: opacity 0.35s ease, transform 0.35s ease;
+  pointer-events: none;
 }
 
 .vp-controls.visible {
   opacity: 1;
   transform: translateY(0);
+  pointer-events: auto;
 }
 
 /* ---- Progress Bar ---- */
@@ -407,6 +409,39 @@
   opacity: 0.3;
 }
 
+/* ---- Retry Button ---- */
+.vp-retry-btn {
+  padding: 10px 28px;
+  border-radius: var(--radius-full);
+  background: rgba(228, 168, 93, 0.15);
+  border: 1px solid var(--accent-gold);
+  color: var(--accent-gold);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  margin-top: 8px;
+}
+
+.vp-retry-btn:hover {
+  background: var(--accent-gold);
+  color: #000;
+  box-shadow: 0 4px 20px rgba(228, 168, 93, 0.3);
+}
+
+/* ---- Quality Badge (single source) ---- */
+.vp-quality-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent-gold);
+  padding: 3px 10px;
+  border: 1px solid rgba(228, 168, 93, 0.3);
+  border-radius: 4px;
+  background: rgba(228, 168, 93, 0.1);
+}
+
 /* ============================================
    Responsive
    ============================================ */
@@ -463,4 +498,49 @@
   .vp-quality-label {
     display: none;
   }
+}
+
+/* ---- Fullscreen & Hide Cursor ---- */
+.vp:not(.vp--show-controls) {
+  cursor: none !important;
+}
+
+.vp:not(.vp--show-controls) * {
+  cursor: none !important;
+}
+
+.vp:fullscreen,
+.vp--fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+  border: none !important;
+}
+
+.vp:fullscreen .vp-video,
+.vp--fullscreen .vp-video {
+  object-fit: contain !important;
+}
+
+/* ---- Progress Highlight Markers (Intro/Outro Chapters) ---- */
+.vp-progress-highlight {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.vp-progress-intro {
+  background: rgba(228, 168, 93, 0.35); /* semi-transparent gold */
+  box-shadow: inset 0 0 4px rgba(228, 168, 93, 0.3);
+}
+
+.vp-progress-outro {
+  background: rgba(139, 92, 246, 0.35); /* semi-transparent violet */
+  box-shadow: inset 0 0 4px rgba(139, 92, 246, 0.3);
 }

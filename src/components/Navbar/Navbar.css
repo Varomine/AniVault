@@ -4,28 +4,30 @@
 
 .navbar {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--navbar-height);
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: var(--content-max-width);
+  height: 56px;
   z-index: var(--z-navbar);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-xl);
-  background: rgba(10, 10, 10, 0.6);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid transparent;
-  transition: background var(--transition-base),
-              border-color var(--transition-base),
-              box-shadow var(--transition-base);
+  background: rgba(13, 13, 13, 0.65);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all var(--transition-base);
 }
 
 .navbar.scrolled {
-  background: rgba(10, 10, 10, 0.92);
-  border-bottom: 1px solid var(--border-subtle);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+  background: rgba(10, 10, 10, 0.88);
+  border-color: rgba(228, 168, 93, 0.35);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 15px rgba(228, 168, 93, 0.05);
 }
 
 /* ---- Logo ---- */
@@ -270,15 +272,16 @@
 .nav-menu-mobile {
   display: none;
   position: fixed;
-  top: var(--navbar-height);
-  left: 0;
-  right: 0;
-  background: rgba(10, 10, 10, 0.97);
+  top: 76px;
+  left: 12px;
+  right: 12px;
+  background: rgba(13, 13, 13, 0.95);
   backdrop-filter: blur(30px);
   -webkit-backdrop-filter: blur(30px);
-  border-bottom: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   padding: var(--space-lg) var(--space-xl);
-  z-index: calc(var(--z-navbar) - 1);
+  z-index: 1010;
   animation: fadeInDown 0.3s ease;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
 }
@@ -329,6 +332,9 @@
   }
 
   .navbar {
+    top: 12px;
+    width: calc(100% - 24px);
+    height: 52px;
     padding: 0 var(--space-lg);
   }
 }

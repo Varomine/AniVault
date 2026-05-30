@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Star, Play, Bookmark, Clock, Calendar, Tv, ExternalLink } from 'lucide-react';
 import { getAnimeById, getAnimeCharacters, getAnimeRecommendations, getAnimeEpisodes, getStatusText, getStatusClass } from '../../services/jikanApi';
 import AnimeRow from '../../components/AnimeRow/AnimeRow';
+import { searchAnikage, getAnikageEpisodes } from '../../services/animepaheApi';
 import { useAuth } from '../../contexts/AuthContext';
-import { addBookmark, removeBookmark, isBookmarked, addLocalBookmark, removeLocalBookmark, isLocalBookmarked } from '../../services/bookmarkService';
+import { addBookmark, removeBookmark, isBookmarked } from '../../services/bookmarkService';
 import './AnimeDetail.css';
 
-function AnimeDetail() {
+function AnimeDetail({ onShowAuth }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
@@ -24,6 +25,8 @@ function AnimeDetail() {
   const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
   const [bookmarkLoading, setBookmarkLoading] = useState(false);
+  const [episodesPage, setEpisodesPage] = useState(0);
+
 
   useEffect(() => {
     async function fetchAnime() {
@@ -62,15 +65,89 @@ function AnimeDetail() {
   }, [id]);
 
   useEffect(() => {
+    let cancelled = false;
     async function fetchEpisodes() {
+      if (!anime) return;
       setEpisodesLoading(true);
-      try { const data = await getAnimeEpisodes(id); setEpisodes(data.data || []); }
-      catch (err) { console.error('Failed to fetch episodes:', err); }
-      finally { setEpisodesLoading(false); }
+
+      const titles = [...new Set([
+        anime.title,
+        anime.title_english,
+        anime.title_japanese
+      ].filter(Boolean))];
+
+      let resolvedSlug = null;
+      let anikageEps = [];
+
+      // 1. Search Anikage
+      for (const title of titles) {
+        if (cancelled) return;
+        try {
+          const results = await searchAnikage(title);
+          if (results && results.length > 0) {
+            let match = results[0];
+            const jikanEps = anime.episodes || 0;
+            
+            // Try exact title match
+            const exactMatch = results.find(r => {
+              const rTitle = (r.title?.english || r.title?.romaji || '').toLowerCase();
+              return rTitle === title.toLowerCase();
+            });
+            if (exactMatch) match = exactMatch;
+
+            // Prefer episode count matches
+            if (jikanEps > 0 && results.length > 1) {
+              const epMatch = results.find(r => {
+                const rEps = r.totalEpisodes || r.currentEpisode || 0;
+                return Math.abs(rEps - jikanEps) <= 2;
+              });
+              if (epMatch) match = epMatch;
+            }
+
+            resolvedSlug = match.slug;
+            break;
+          }
+        } catch (err) {
+          console.error('Anikage search in details failed:', err);
+        }
+      }
+
+      // 2. Fetch episodes list from Anikage if slug found
+      if (resolvedSlug) {
+        try {
+          const { episodes: eps } = await getAnikageEpisodes(resolvedSlug);
+          if (eps && eps.length > 0) {
+            anikageEps = eps
+              .filter(e => e.number > 0)
+              .map(e => ({ mal_id: e.number, title: e.title || `Episode ${e.number}` }))
+              .sort((a, b) => a.mal_id - b.mal_id);
+          }
+        } catch (err) {
+          console.error('Anikage fetch episodes failed:', err);
+        }
+      }
+
+      if (cancelled) return;
+
+      // 3. Fallback to Jikan if Anikage returned nothing
+      if (anikageEps.length > 0) {
+        setEpisodes(anikageEps);
+        setEpisodesLoading(false);
+      } else {
+        try {
+          const data = await getAnimeEpisodes(id);
+          if (!cancelled) setEpisodes(data.data || []);
+        } catch (err) {
+          console.error('Failed to fetch Jikan episodes:', err);
+        } finally {
+          if (!cancelled) setEpisodesLoading(false);
+        }
+      }
     }
-    const timer = setTimeout(fetchEpisodes, 900);
-    return () => clearTimeout(timer);
-  }, [id]);
+
+    const timer = setTimeout(fetchEpisodes, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [id, anime]);
 
   useEffect(() => {
     async function checkBookmark() {
@@ -78,27 +155,49 @@ function AnimeDetail() {
       if (isAuthenticated && user) {
         const result = await isBookmarked(user.uid, anime.mal_id);
         setBookmarked(result);
-      } else { setBookmarked(isLocalBookmarked(anime.mal_id)); }
+      } else {
+        setBookmarked(false);
+      }
     }
     checkBookmark();
   }, [anime, isAuthenticated, user]);
 
   const handleBookmark = useCallback(async () => {
+    if (!isAuthenticated) {
+      if (onShowAuth) onShowAuth();
+      return;
+    }
     if (!anime || bookmarkLoading) return;
     setBookmarkLoading(true);
     try {
       if (bookmarked) {
-        if (isAuthenticated && user) await removeBookmark(user.uid, anime.mal_id);
-        else removeLocalBookmark(anime.mal_id);
+        await removeBookmark(user.uid, anime.mal_id);
         setBookmarked(false);
       } else {
-        if (isAuthenticated && user) await addBookmark(user.uid, anime);
-        else addLocalBookmark(anime);
+        await addBookmark(user.uid, anime);
         setBookmarked(true);
       }
     } catch (err) { console.error('Bookmark action failed:', err); }
     finally { setBookmarkLoading(false); }
-  }, [anime, bookmarked, bookmarkLoading, isAuthenticated, user]);
+  }, [anime, bookmarked, bookmarkLoading, isAuthenticated, user, onShowAuth]);
+
+  const computedEpisodes = useMemo(() => {
+    if (episodes.length > 0) {
+      return episodes;
+    }
+    const count = typeof anime?.episodes === 'number' ? anime.episodes : 0;
+    if (count > 0) {
+      return Array.from({ length: count }, (_, i) => ({ mal_id: i + 1, title: `Episode ${i + 1}` }));
+    }
+    return [];
+  }, [episodes, anime?.episodes]);
+
+  const EP_PAGE_SIZE = 100;
+  const epTotalPages = Math.ceil(computedEpisodes.length / EP_PAGE_SIZE);
+  const paginatedEpisodes = useMemo(() => {
+    const start = episodesPage * EP_PAGE_SIZE;
+    return computedEpisodes.slice(start, start + EP_PAGE_SIZE);
+  }, [computedEpisodes, episodesPage]);
 
   const displayCharacters = characters
     .map(char => { const jpVA = char.voice_actors?.find(va => va.language === 'Japanese'); return { ...char, jpVA }; })
@@ -191,26 +290,40 @@ function AnimeDetail() {
             <span>Loading episodes...</span>
           </div>
         ) : (
-          <div className="detail-episodes-grid">
-            {(episodes.length > 0
-              ? episodes
-              : Array.from(
-                  { length: typeof totalEpisodes === 'number' ? Math.min(totalEpisodes, 100) : 0 },
-                  (_, i) => ({ mal_id: i + 1, title: `Episode ${i + 1}` })
-                )
-            ).map((ep, idx) => {
-              const epNum = ep.mal_id || idx + 1;
-              return (
-                <Link key={epNum} to={`/watch/${anime.mal_id}/${epNum}`}
-                  className="detail-episode-btn" title={ep.title || `Episode ${epNum}`}>
-                  {epNum}
-                </Link>
-              );
-            })}
-            {totalEpisodes === '?' && episodes.length === 0 && (
-              <p className="detail-no-data">No episode data available yet.</p>
+          <>
+            {epTotalPages > 1 && (
+              <div className="detail-episodes-pagination">
+                {Array.from({ length: epTotalPages }, (_, i) => {
+                  const start = i * EP_PAGE_SIZE + 1;
+                  const end = Math.min((i + 1) * EP_PAGE_SIZE, computedEpisodes.length);
+                  return (
+                    <button
+                      key={i}
+                      className={`detail-page-tab-btn ${episodesPage === i ? 'active' : ''}`}
+                      onClick={() => setEpisodesPage(i)}
+                    >
+                      {start}-{end}
+                    </button>
+                  );
+                })}
+              </div>
             )}
-          </div>
+            
+            <div className="detail-episodes-grid">
+              {paginatedEpisodes.map((ep, idx) => {
+                const epNum = ep.mal_id || (episodesPage * EP_PAGE_SIZE) + idx + 1;
+                return (
+                  <Link key={epNum} to={`/watch/${anime.mal_id}/${epNum}`}
+                    className="detail-episode-btn" title={ep.title || `Episode ${epNum}`}>
+                    {epNum}
+                  </Link>
+                );
+              })}
+              {computedEpisodes.length === 0 && (
+                <p className="detail-no-data">No episode data available yet.</p>
+              )}
+            </div>
+          </>
         )}
       </section>
 
