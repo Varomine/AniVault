@@ -2,7 +2,7 @@
    Navbar — Premium Glass Navigation
    ============================================ */
 
-.navbar {
+.header-container {
   position: fixed;
   top: 16px;
   left: 50%;
@@ -14,6 +14,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  pointer-events: none; /* Let clicks pass through the gap between navbar capsule and actions */
+  transition: all var(--transition-base);
+}
+
+.navbar-capsule {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xl);
+  height: 100%;
   padding: 0 var(--space-xl);
   background: rgba(13, 13, 13, 0.65);
   backdrop-filter: blur(24px);
@@ -21,13 +30,22 @@
   border-radius: var(--radius-full);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  pointer-events: auto; /* Re-enable click interactions */
   transition: all var(--transition-base);
 }
 
-.navbar.scrolled {
+.header-container.scrolled .navbar-capsule {
   background: rgba(10, 10, 10, 0.88);
   border-color: rgba(228, 168, 93, 0.35);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 15px rgba(228, 168, 93, 0.05);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  height: 100%;
+  pointer-events: auto; /* Re-enable click interactions */
 }
 
 /* ---- Logo ---- */
@@ -331,11 +349,18 @@
     display: flex;
   }
 
-  .navbar {
+  .header-container {
     top: 12px;
     width: calc(100% - 24px);
-    height: 52px;
+    height: 48px;
+  }
+
+  .navbar-capsule {
     padding: 0 var(--space-lg);
+  }
+
+  .nav-menu-mobile {
+    top: 68px;
   }
 }
 
@@ -358,7 +383,6 @@
 .nav-search-dropdown {
   position: absolute;
   top: calc(100% + 8px);
-  left: 0;
   right: 0;
   min-width: 360px;
   background: rgba(18, 18, 18, 0.97);

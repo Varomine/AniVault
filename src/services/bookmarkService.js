@@ -1,34 +1,34 @@
 // Bookmark Service — Firebase Firestore
-import { doc, setDoc, deleteDoc, getDoc, getDocs, collection, query, where, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
-
-const BOOKMARKS_COLLECTION = 'bookmarks';
-
-function getUserBookmarksRef(userId) {
-  return collection(db, 'users', userId, BOOKMARKS_COLLECTION);
-}
-
-function getBookmarkDocRef(userId, animeId) {
-  return doc(db, 'users', userId, BOOKMARKS_COLLECTION, String(animeId));
-}
 
 export async function addBookmark(userId, anime, category = 'Plan to Watch') {
   try {
-    const docRef = getBookmarkDocRef(userId, anime.mal_id);
-    await setDoc(docRef, {
+    const docRef = doc(db, 'users', userId);
+    const snap = await getDoc(docRef);
+    let bookmarks = [];
+    if (snap.exists()) {
+      bookmarks = snap.data().bookmarks || [];
+    }
+    const bookmarkEntry = {
       mal_id: anime.mal_id,
       title: anime.title || anime.title_english || '',
       title_english: anime.title_english || '',
       title_japanese: anime.title_japanese || '',
-      image: anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url || '',
+      image: anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url || anime.image || '',
       score: anime.score || 0,
       type: anime.type || '',
       episodes: anime.episodes || 0,
       status: anime.status || '',
-      genres: (anime.genres || []).map(g => g.name),
+      genres: (anime.genres || []).map(g => typeof g === 'string' ? g : g.name),
       category,
       addedAt: Date.now(),
-    });
+    };
+    // Remove duplicate first
+    bookmarks = bookmarks.filter(b => b.mal_id !== anime.mal_id);
+    bookmarks.push(bookmarkEntry);
+
+    await setDoc(docRef, { bookmarks }, { merge: true });
     return true;
   } catch (error) {
     console.error('Failed to add bookmark:', error);
@@ -38,9 +38,15 @@ export async function addBookmark(userId, anime, category = 'Plan to Watch') {
 
 export async function removeBookmark(userId, animeId) {
   try {
-    const docRef = getBookmarkDocRef(userId, animeId);
-    await deleteDoc(docRef);
-    return true;
+    const docRef = doc(db, 'users', userId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      let bookmarks = snap.data().bookmarks || [];
+      bookmarks = bookmarks.filter(b => b.mal_id !== animeId);
+      await setDoc(docRef, { bookmarks }, { merge: true });
+      return true;
+    }
+    return false;
   } catch (error) {
     console.error('Failed to remove bookmark:', error);
     return false;
@@ -49,9 +55,13 @@ export async function removeBookmark(userId, animeId) {
 
 export async function isBookmarked(userId, animeId) {
   try {
-    const docRef = getBookmarkDocRef(userId, animeId);
+    const docRef = doc(db, 'users', userId);
     const snap = await getDoc(docRef);
-    return snap.exists();
+    if (snap.exists()) {
+      const bookmarks = snap.data().bookmarks || [];
+      return bookmarks.some(b => b.mal_id === animeId);
+    }
+    return false;
   } catch {
     return false;
   }
@@ -59,15 +69,16 @@ export async function isBookmarked(userId, animeId) {
 
 export async function getBookmarks(userId, category = null) {
   try {
-    const ref = getUserBookmarksRef(userId);
-    let q;
-    if (category && category !== 'All') {
-      q = query(ref, where('category', '==', category));
-    } else {
-      q = ref;
+    const docRef = doc(db, 'users', userId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const bookmarks = snap.data().bookmarks || [];
+      if (category && category !== 'All') {
+        return bookmarks.filter(b => b.category === category);
+      }
+      return bookmarks;
     }
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return [];
   } catch (error) {
     console.error('Failed to get bookmarks:', error);
     return [];
@@ -76,9 +87,20 @@ export async function getBookmarks(userId, category = null) {
 
 export async function updateBookmarkCategory(userId, animeId, category) {
   try {
-    const docRef = getBookmarkDocRef(userId, animeId);
-    await updateDoc(docRef, { category });
-    return true;
+    const docRef = doc(db, 'users', userId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      let bookmarks = snap.data().bookmarks || [];
+      bookmarks = bookmarks.map(b => {
+        if (b.mal_id === animeId) {
+          return { ...b, category };
+        }
+        return b;
+      });
+      await setDoc(docRef, { bookmarks }, { merge: true });
+      return true;
+    }
+    return false;
   } catch (error) {
     console.error('Failed to update bookmark category:', error);
     return false;
@@ -104,7 +126,7 @@ export function addLocalBookmark(anime, category = 'Plan to Watch') {
   bookmarks.push({
     mal_id: anime.mal_id,
     title: anime.title || '',
-    image: anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url || '',
+    image: anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url || anime.image || '',
     score: anime.score || 0,
     type: anime.type || '',
     episodes: anime.episodes || 0,

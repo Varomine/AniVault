@@ -1,17 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
-import { Search, Menu, X, User, LogOut, Bookmark as BookmarkIcon } from 'lucide-react';
+import { Search, Menu, X, User, LogOut, Bookmark as BookmarkIcon, Settings as SettingsIcon } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSettings } from '../../contexts/SettingsContext';
 import { searchAnime } from '../../services/jikanApi';
+import SettingsModal from '../SettingsModal/SettingsModal';
 import './Navbar.css';
 
 export default function Navbar({ onShowAuth }) {
   const { user, isAuthenticated, logout } = useAuth();
+  const { nsfw } = useSettings();
   const navigate = useNavigate();
 
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -59,7 +63,7 @@ export default function Navbar({ onShowAuth }) {
     });
     searchTimerRef.current = setTimeout(async () => {
       try {
-        const res = await searchAnime({ q, limit: 6, sfw: true });
+        const res = await searchAnime({ q, limit: 6, sfw: !nsfw });
         setSearchResults(res?.data || []);
       } catch (err) {
         console.error('Search error:', err);
@@ -69,7 +73,7 @@ export default function Navbar({ onShowAuth }) {
       }
     }, 400);
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
-  }, [searchQuery]);
+  }, [searchQuery, nsfw]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -100,6 +104,8 @@ export default function Navbar({ onShowAuth }) {
     { label: 'Home', to: '/' },
     { label: 'Browse', to: '/browse' },
     { label: 'Schedule', to: '/schedule' },
+    { label: 'Music', to: '/music' },
+    { label: 'Torrent', to: '/torrent' },
     { label: 'Bookmarks', to: '/bookmarks' },
   ];
 
@@ -111,21 +117,23 @@ export default function Navbar({ onShowAuth }) {
 
   return (
     <>
-      <nav className={`navbar${scrolled ? ' scrolled' : ''}`}>
-        <Link to="/" className="nav-logo">
-          <span className="nav-logo-text">AniVault</span>
-        </Link>
+      <header className={`header-container${scrolled ? ' scrolled' : ''}`}>
+        <nav className="navbar-capsule">
+          <Link to="/" className="nav-logo">
+            <span className="nav-logo-text">AniVault</span>
+          </Link>
 
-        <div className="nav-links">
-          {navItems.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.to === '/'}
-              className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-              {item.label}
-            </NavLink>
-          ))}
-        </div>
+          <div className="nav-links">
+            {navItems.map((item) => (
+              <NavLink key={item.to} to={item.to} end={item.to === '/'}
+                className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+                {item.label}
+              </NavLink>
+            ))}
+          </div>
+        </nav>
 
-        <div className="nav-right">
+        <div className="header-actions">
           {/* Realtime Search */}
           <div className="nav-search-wrapper" ref={searchRef}>
             <form className="nav-search" onSubmit={handleSearchSubmit}>
@@ -166,37 +174,48 @@ export default function Navbar({ onShowAuth }) {
             )}
           </div>
 
-          {/* User Section */}
-          {isAuthenticated ? (
-            <div className="nav-user" ref={dropdownRef}>
-              <button className="nav-avatar" onClick={() => setDropdownOpen(!dropdownOpen)} aria-label="User menu">
-                {user?.photoURL ? <img src={user.photoURL} alt={user.displayName || 'User'} /> : getInitial()}
-              </button>
-              {dropdownOpen && (
-                <div className="nav-dropdown">
-                  <div className="nav-dropdown-item" style={{ pointerEvents: 'none', opacity: 0.7 }}>
-                    <User size={15} /><span>{user?.displayName || user?.email || 'User'}</span>
-                  </div>
-                  <div className="nav-dropdown-divider" />
-                  <button className="nav-dropdown-item" onClick={() => { navigate('/bookmarks'); setDropdownOpen(false); }}>
-                    <BookmarkIcon size={15} /><span>Bookmarks</span>
-                  </button>
-                  <div className="nav-dropdown-divider" />
+          <div className="nav-user" ref={dropdownRef}>
+            <button className="nav-avatar nav-avatar--anonymous" onClick={() => setDropdownOpen(!dropdownOpen)} aria-label="User menu">
+              {isAuthenticated && user?.photoURL ? (
+                <img src={user.photoURL} alt={user.displayName || 'User'} />
+              ) : isAuthenticated ? (
+                getInitial()
+              ) : (
+                <User size={18} />
+              )}
+            </button>
+             {dropdownOpen && (
+              <div className="nav-dropdown">
+                <div className="nav-dropdown-item" style={{ pointerEvents: 'none', opacity: 0.7 }}>
+                  <User size={15} /><span>{isAuthenticated ? (user?.displayName || user?.email || 'User') : 'Anonymous'}</span>
+                </div>
+                <div className="nav-dropdown-divider" />
+                <button className="nav-dropdown-item" onClick={() => { navigate('/bookmarks'); setDropdownOpen(false); }}>
+                  <BookmarkIcon size={15} /><span>Bookmarks</span>
+                </button>
+                <div className="nav-dropdown-divider" />
+                <button className="nav-dropdown-item" onClick={() => { setSettingsOpen(true); setDropdownOpen(false); }}>
+                  <SettingsIcon size={15} /><span>Settings</span>
+                </button>
+                <div className="nav-dropdown-divider" />
+                {isAuthenticated ? (
                   <button className="nav-dropdown-item danger" onClick={handleLogout}>
                     <LogOut size={15} /><span>Sign Out</span>
                   </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <button className="nav-signin-btn" onClick={onShowAuth}><User size={15} /> Sign In</button>
-          )}
+                ) : (
+                  <button className="nav-dropdown-item" onClick={() => { onShowAuth(); setDropdownOpen(false); }}>
+                    <LogOut size={15} style={{ transform: 'rotate(180deg)' }} /><span>Sign In</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
 
           <button className="nav-mobile-toggle" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Toggle menu">
             {mobileOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
         </div>
-      </nav>
+      </header>
 
       <div className={`nav-menu-mobile${mobileOpen ? ' open' : ''}`}>
         {navItems.map((item) => (
@@ -212,6 +231,8 @@ export default function Navbar({ onShowAuth }) {
           <Search size={16} className="nav-search-icon" />
         </form>
       </div>
+
+      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
   );
 }

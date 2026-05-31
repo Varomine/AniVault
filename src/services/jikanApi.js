@@ -132,7 +132,8 @@ export async function getUpcomingAnime(params = {}) {
 }
 
 export async function searchAnime(params = {}) {
-  const url = buildUrl('/anime', { limit: 25, sfw: true, ...params });
+  const { sfw = true, ...rest } = params;
+  const url = buildUrl('/anime', { limit: 25, sfw, ...rest });
   return enqueueRequest(url);
 }
 

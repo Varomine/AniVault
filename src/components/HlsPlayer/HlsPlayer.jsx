@@ -29,7 +29,6 @@ export default function HlsPlayer({ sources, poster, intro, outro, initialTime =
   const controlsTimerRef = useRef(null);
   const progressRef = useRef(null);
 
-  const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -43,13 +42,13 @@ export default function HlsPlayer({ sources, poster, intro, outro, initialTime =
   const [currentQuality, setCurrentQuality] = useState('auto');
   const [showSkipIntro, setShowSkipIntro] = useState(false);
   const [showSkipOutro, setShowSkipOutro] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
 
   const introRef = useRef(intro);
   const outroRef = useRef(outro);
   const onProgressRef = useRef(onProgress);
   const lastProgressSaveRef = useRef(0);
   const lastTimeRef = useRef(initialTime);
+  const hasSeekedRef = useRef(false);
 
   useEffect(() => {
     introRef.current = intro;
@@ -85,9 +84,10 @@ export default function HlsPlayer({ sources, poster, intro, outro, initialTime =
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
   }, []);
 
+  const streamUrl = getStreamUrl(currentQuality);
+
   // ---- MAIN: Initialize player ----
   useEffect(() => {
-    const streamUrl = getStreamUrl(currentQuality);
     if (!streamUrl) {
       Promise.resolve().then(() => setLoading(false));
       return;
@@ -97,7 +97,6 @@ export default function HlsPlayer({ sources, poster, intro, outro, initialTime =
     if (!video) return;
 
     Promise.resolve().then(() => {
-      setError(null);
       setLoading(true);
     });
 
@@ -106,62 +105,113 @@ export default function HlsPlayer({ sources, poster, intro, outro, initialTime =
     const resumePlayback = () => {
       setLoading(false);
       const targetTime = lastTimeRef.current;
-      if (targetTime > 1) video.currentTime = targetTime;
-      video.play().catch(() => {});
+      
+      const seekAndPlay = () => {
+        if (targetTime > 1) {
+          video.currentTime = targetTime;
+        }
+        video.play().catch(() => {});
+      };
+
+      if (video.readyState >= 1) {
+        seekAndPlay();
+      } else {
+        const onLoaded = () => {
+          seekAndPlay();
+          video.removeEventListener('loadedmetadata', onLoaded);
+        };
+        video.addEventListener('loadedmetadata', onLoaded);
+      }
     };
 
-    // Safari / iOS: native HLS
-    if (USE_NATIVE_HLS) {
+    const isHls = streamUrl.includes('.m3u8') || streamUrl.includes('index.txt') || streamUrl.includes('/stream/');
+
+    // Safari / iOS OR Non-HLS streams (like direct WebM/MP4 links)
+    if (USE_NATIVE_HLS || !isHls) {
       destroyHls();
       video.src = streamUrl;
-      video.addEventListener('loadeddata', resumePlayback, { once: true });
-      video.addEventListener('error', () => {
-        // Retry with different quality or show error
-        if (sources?.length > 1 && currentQuality === 'auto') {
-          const fallback = sources.find(s => s.quality === '720p') || sources[1];
-          if (fallback) { setCurrentQuality(fallback.quality); return; }
-        }
-        setError('Playback failed');
-        setLoading(false);
-      }, { once: true });
-      return () => destroyHls();
+      
+      const onLoadedData = () => {
+        resumePlayback();
+      };
+      
+      let nativeRetryCount = 0;
+      const onError = () => {
+        nativeRetryCount++;
+        const lastTime = lastTimeRef.current;
+        const retryDelay = Math.min(1000 * Math.pow(1.5, nativeRetryCount), 8000);
+        console.warn(`Native playback error, retrying #${nativeRetryCount} in ${retryDelay}ms...`);
+        setTimeout(() => {
+          if (cancelled) return;
+          video.load();
+          
+          const seekAndPlay = () => {
+            if (lastTime > 1) {
+              video.currentTime = lastTime;
+            }
+            video.play().catch(() => {});
+          };
+
+          if (video.readyState >= 1) {
+            seekAndPlay();
+          } else {
+            const onLoaded = () => {
+              seekAndPlay();
+              video.removeEventListener('loadedmetadata', onLoaded);
+            };
+            video.addEventListener('loadedmetadata', onLoaded);
+          }
+        }, retryDelay);
+      };
+
+      video.addEventListener('loadeddata', onLoadedData, { once: true });
+      video.addEventListener('error', onError);
+      
+      return () => {
+        video.removeEventListener('loadeddata', onLoadedData);
+        video.removeEventListener('error', onError);
+        destroyHls();
+      };
     }
 
     // Chrome / Firefox / Edge: hls.js
     let cancelled = false;
     preloadHls().then((Hls) => {
       if (cancelled || !Hls.isSupported()) {
-        if (!cancelled) { setError('Browser not supported'); setLoading(false); }
+        if (!cancelled) { console.error('Browser not supported'); setLoading(false); }
         return;
       }
 
       destroyHls();
 
-      const hls = new Hls({
+      const retryPolicy = {
+        maxTimeToFirstByteMs: 15000,
+        maxLoadTimeMs: 25000,
+        timeoutRetry: {
+          maxNumRetry: 30,
+          retryDelayMs: 1000,
+          maxRetryDelayMs: 8000
+        },
+        errorRetry: {
+          maxNumRetry: 30,
+          retryDelayMs: 1000,
+          maxRetryDelayMs: 8000
+        }
+      };
+
+      const hlsConfig = {
         enableWorker: true,
         lowLatencyMode: false,
-        // Fast startup
         maxBufferLength: 30,
         maxMaxBufferLength: 60,
         maxBufferSize: 30 * 1000 * 1000,
-        maxBufferHole: 0.5,
-        startLevel: -1,
-        // Aggressive loading for speed
-        maxLoadingDelay: 4,
-        maxFragLookUpTolerance: 0.25,
-        // Retries
-        fragLoadingMaxRetry: 10,
-        fragLoadingRetryDelay: 500,
-        manifestLoadingMaxRetry: 6,
-        manifestLoadingRetryDelay: 500,
-        levelLoadingMaxRetry: 6,
-        // Seeking
-        backBufferLength: 30,
-        nudgeOffset: 0.2,
-        nudgeMaxRetry: 10,
-        // Ensure .ts segment support
         enableSoftwareAES: true,
-      });
+        fragLoadPolicy: { default: retryPolicy },
+        manifestLoadPolicy: { default: retryPolicy },
+        playlistLoadPolicy: { default: retryPolicy }
+      };
+
+      const hls = new Hls(hlsConfig);
 
       hlsRef.current = hls;
       hls.loadSource(streamUrl);
@@ -172,49 +222,82 @@ export default function HlsPlayer({ sources, poster, intro, outro, initialTime =
         resumePlayback();
       });
 
-      // Error handling — be aggressive about recovery, don't show error easily
+      // Error handling with silent automatic reloads on fatal errors
       let mediaRecoverCount = 0;
       let networkRecoverCount = 0;
+      let generalRetryCount = 0;
+
+      const reloadHlsStream = () => {
+        generalRetryCount++;
+        const lastTime = lastTimeRef.current;
+        const retryDelay = Math.min(1000 * Math.pow(1.5, generalRetryCount), 8000);
+        console.warn(`HLS fatal error, reloading stream (retry #${generalRetryCount}) in ${retryDelay}ms...`);
+        
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
+        
+        setTimeout(() => {
+          if (cancelled) return;
+          
+          const newHls = new Hls(hlsConfig);
+          
+          hlsRef.current = newHls;
+          newHls.loadSource(streamUrl);
+          newHls.attachMedia(video);
+          
+          newHls.on(Hls.Events.MANIFEST_PARSED, () => {
+            if (cancelled) return;
+            setLoading(false);
+            
+            const seekAndPlay = () => {
+              if (lastTime > 1) {
+                video.currentTime = lastTime;
+              }
+              video.play().catch(() => {});
+            };
+
+            if (video.readyState >= 1) {
+              seekAndPlay();
+            } else {
+              const onLoaded = () => {
+                seekAndPlay();
+                video.removeEventListener('loadedmetadata', onLoaded);
+              };
+              video.addEventListener('loadedmetadata', onLoaded);
+            }
+          });
+
+          newHls.on(Hls.Events.ERROR, (_, errorData) => {
+            if (cancelled || !errorData.fatal) return;
+            reloadHlsStream();
+          });
+        }, retryDelay);
+      };
 
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (cancelled) return;
         console.warn('[HLS]', data.type, data.details, data.fatal ? 'FATAL' : '');
 
-        if (!data.fatal) return; // non-fatal, hls.js handles it
+        if (!data.fatal) return;
 
         if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
           mediaRecoverCount++;
           if (mediaRecoverCount <= 3) {
-            console.log('[HLS] recoverMediaError attempt', mediaRecoverCount);
-            hls.recoverMediaError();
-          } else if (mediaRecoverCount <= 5) {
-            // Nuclear: swap codec
-            console.log('[HLS] swapAudioCodec + recover attempt', mediaRecoverCount);
-            hls.swapAudioCodec();
             hls.recoverMediaError();
           } else {
-            // Full reload
-            console.log('[HLS] full reload');
-            mediaRecoverCount = 0;
-            hls.destroy();
-            const hls2 = new Hls({ enableWorker: true, enableSoftwareAES: true });
-            hlsRef.current = hls2;
-            hls2.loadSource(streamUrl);
-            hls2.attachMedia(video);
-            hls2.on(Hls.Events.MANIFEST_PARSED, () => { if (!cancelled) video.play().catch(() => {}); });
+            reloadHlsStream();
           }
         } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
           networkRecoverCount++;
-          if (networkRecoverCount <= 5) {
-            console.log('[HLS] network recovery attempt', networkRecoverCount);
-            setTimeout(() => { if (!cancelled) hls.startLoad(); }, 1000 * networkRecoverCount);
+          if (networkRecoverCount <= 3) {
+            hls.startLoad();
           } else {
-            setError('Network error — check your connection');
-            setLoading(false);
+            reloadHlsStream();
           }
         } else {
-          setError('Playback failed');
-          setLoading(false);
+          reloadHlsStream();
         }
       });
 
@@ -237,12 +320,36 @@ export default function HlsPlayer({ sources, poster, intro, outro, initialTime =
         video.removeEventListener('playing', onPlaying);
         if (stallTimer) clearTimeout(stallTimer);
       };
-    }).catch(() => {
-      if (!cancelled) { setError('Failed to load player'); setLoading(false); }
+    }).catch((err) => {
+      if (!cancelled) { console.error('Failed to load player:', err); setLoading(false); }
     });
 
     return () => { cancelled = true; destroyHls(); };
-  }, [currentQuality, sources, retryCount, getStreamUrl, destroyHls]);
+  }, [streamUrl, destroyHls]);
+
+  // Reset seek tracking when URL changes
+  useEffect(() => {
+    hasSeekedRef.current = false;
+  }, [streamUrl]);
+
+  // Handle late-resolving initialTime (e.g. database progress fetch)
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !initialTime || hasSeekedRef.current) return;
+    
+    if (video.readyState >= 1) {
+      video.currentTime = initialTime;
+      hasSeekedRef.current = true;
+    } else {
+      const handleLoaded = () => {
+        video.currentTime = initialTime;
+        hasSeekedRef.current = true;
+        video.removeEventListener('loadedmetadata', handleLoaded);
+      };
+      video.addEventListener('loadedmetadata', handleLoaded);
+      return () => video.removeEventListener('loadedmetadata', handleLoaded);
+    }
+  }, [initialTime, streamUrl]);
 
   // ---- Video events ----
   useEffect(() => {
@@ -284,12 +391,25 @@ export default function HlsPlayer({ sources, poster, intro, outro, initialTime =
       setPlaying(false);
       triggerProgress(video.currentTime, video.duration);
     };
+
+    const onWaiting = () => setLoading(true);
+    const onPlaying = () => setLoading(false);
+    const onSeeking = () => setLoading(true);
+    const onSeeked = () => setLoading(false);
+    const onCanPlay = () => setLoading(false);
+
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
     video.addEventListener('timeupdate', onTime);
     video.addEventListener('durationchange', onDur);
     video.addEventListener('volumechange', onVol);
     video.addEventListener('ended', onEnd);
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('seeking', onSeeking);
+    video.addEventListener('seeked', onSeeked);
+    video.addEventListener('canplay', onCanPlay);
+
     return () => {
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
@@ -297,6 +417,11 @@ export default function HlsPlayer({ sources, poster, intro, outro, initialTime =
       video.removeEventListener('durationchange', onDur);
       video.removeEventListener('volumechange', onVol);
       video.removeEventListener('ended', onEnd);
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('seeking', onSeeking);
+      video.removeEventListener('seeked', onSeeked);
+      video.removeEventListener('canplay', onCanPlay);
     };
   }, []);
 
@@ -395,7 +520,7 @@ export default function HlsPlayer({ sources, poster, intro, outro, initialTime =
     setCurrentQuality(q);
     setShowQualityMenu(false);
   }, []);
-  const handleRetry = useCallback(() => { setError(null); setRetryCount(c => c + 1); }, []);
+
 
   // ---- Keyboard ----
   useEffect(() => {
@@ -438,22 +563,12 @@ export default function HlsPlayer({ sources, poster, intro, outro, initialTime =
       onClick={(e) => { if (showQualityMenu && !e.target.closest('.vp-quality')) setShowQualityMenu(false); }}
       tabIndex={0}>
 
-      <video ref={videoRef} className="vp-video" playsInline webkit-playsinline="" crossOrigin="anonymous"
+      <video ref={videoRef} className="vp-video" playsInline webkit-playsinline=""
         poster={poster} preload="auto" onClick={togglePlay} onDoubleClick={toggleFullscreen} />
 
       {loading && <div className="vp-overlay vp-loading"><div className="vp-spinner" /></div>}
 
-      {error && (
-        <div className="vp-overlay vp-error">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="36" height="36">
-            <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
-          </svg>
-          <span>{error}</span>
-          <button className="vp-retry-btn" onClick={handleRetry}>↻ Retry</button>
-        </div>
-      )}
-
-      {!playing && !loading && !error && showControls && (
+      {!playing && !loading && showControls && (
         <button className="vp-big-play" onClick={togglePlay} aria-label="Play">
           <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3" /></svg>
         </button>

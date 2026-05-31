@@ -3,7 +3,7 @@
    ============================================ */
 
 .anime-row {
-  margin-bottom: var(--space-3xl);
+  margin-bottom: var(--space-4xl);
 }
 
 /* ---- Header ---- */
@@ -11,7 +11,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--space-lg);
+  margin-bottom: var(--space-xl);
   padding: 0 var(--space-xl);
 }
 
@@ -39,9 +39,40 @@
   gap: var(--space-sm);
 }
 
-/* ---- Wrapper (for arrow positioning) ---- */
+/* ---- Wrapper (for arrow positioning and fading edges) ---- */
 .anime-row-wrapper {
   position: relative;
+}
+
+.anime-row-wrapper::before,
+.anime-row-wrapper::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 60px;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.anime-row-wrapper::before {
+  left: 0;
+  background: linear-gradient(to right, var(--bg-primary) 0%, transparent 100%);
+}
+
+.anime-row-wrapper::after {
+  right: 0;
+  background: linear-gradient(to left, var(--bg-primary) 0%, transparent 100%);
+}
+
+.anime-row-wrapper.has-fade-left::before {
+  opacity: 1;
+}
+
+.anime-row-wrapper.has-fade-right::after {
+  opacity: 1;
 }
 
 /* ---- Scrollable Container ---- */
@@ -51,7 +82,6 @@
   overflow-x: auto;
   overflow-y: hidden;
   scroll-behavior: smooth;
-  scroll-snap-type: x proximity;
   padding: var(--space-sm) var(--space-xl);
   /* hide scrollbar */
   -ms-overflow-style: none;
@@ -67,7 +97,6 @@
   min-width: 180px;
   max-width: 200px;
   flex-shrink: 0;
-  scroll-snap-align: start;
 }
 
 /* ---- Arrow Buttons ---- */
@@ -86,7 +115,7 @@
   border-radius: var(--radius-full);
   color: var(--text-secondary);
   cursor: pointer;
-  z-index: 5;
+  z-index: 20;
   opacity: 0;
   transition: opacity var(--transition-fast),
               background var(--transition-fast),
@@ -145,12 +174,17 @@
    Responsive
    ============================================ */
 @media (max-width: 768px) {
+  .anime-row-wrapper::before,
+  .anime-row-wrapper::after {
+    width: 40px;
+  }
+
   .anime-row-header {
-    padding: 0 var(--space-lg);
+    padding: 0 var(--space-xl);
   }
 
   .anime-row-container {
-    padding: var(--space-sm) var(--space-lg);
+    padding: var(--space-sm) var(--space-xl);
   }
 
   .anime-row-container .anime-card {
@@ -172,11 +206,11 @@
 
 @media (max-width: 480px) {
   .anime-row-header {
-    padding: 0 var(--space-md);
+    padding: 0 20px;
   }
 
   .anime-row-container {
-    padding: var(--space-sm) var(--space-md);
+    padding: var(--space-sm) 20px;
   }
 
   .anime-row-container .anime-card {

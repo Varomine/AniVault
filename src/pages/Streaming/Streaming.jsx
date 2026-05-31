@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Play, Bookmark, ExternalLink, Star, Tv, Clock, Calendar, AlertCircle, ChevronLeft, ChevronRight, RefreshCw, X } from 'lucide-react';
+import { Play, Bookmark, ExternalLink, Star, Tv, Clock, Calendar, AlertCircle, ChevronLeft, ChevronRight, X, Loader2 } from 'lucide-react';
 import { searchAnikage, getAnikageEpisodes, getAnikageStreams, getBestSource } from '../../services/animepaheApi';
+import { search123Anime, get123AnimeStream } from '../../services/123animeApi';
 import { getAnimeById, getAnimeRecommendations, getStatusText, getStatusClass } from '../../services/jikanApi';
 import { useAuth } from '../../contexts/AuthContext';
-import { addBookmark, removeBookmark, isBookmarked } from '../../services/bookmarkService';
+import { useSettings } from '../../contexts/SettingsContext';
+import { addBookmark, removeBookmark, getBookmarks, updateBookmarkCategory } from '../../services/bookmarkService';
 import { updateWatchHistory, saveEpisodeProgress, getEpisodeProgress } from '../../services/watchHistoryService';
 import HlsPlayer from '../../components/HlsPlayer/HlsPlayer';
 import './Streaming.css';
@@ -13,9 +15,11 @@ import './Streaming.css';
 const slugCache = new Map();
 
 function Streaming({ onShowAuth }) {
-  const { id, episode: episodeParam } = useParams();
+  const { id, episode } = useParams();
+  const episodeParam = episode;
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
+  const { defaultServer } = useSettings();
 
   const [anime, setAnime] = useState(null);
   const [animeLoading, setAnimeLoading] = useState(true);
@@ -29,8 +33,18 @@ function Streaming({ onShowAuth }) {
   const [introTimestamp, setIntroTimestamp] = useState(null);
   const [outroTimestamp, setOutroTimestamp] = useState(null);
 
-  const [activeServer, setActiveServer] = useState('pahe');
+  const [activeServer, setActiveServer] = useState(defaultServer || 'pahe');
   const [showServerModal, setShowServerModal] = useState(false);
+
+  const prevDefaultServerRef = useRef(defaultServer);
+
+  // Sync server if default changes in settings
+  useEffect(() => {
+    if (defaultServer && defaultServer !== prevDefaultServerRef.current) {
+      setActiveServer(defaultServer);
+      prevDefaultServerRef.current = defaultServer;
+    }
+  }, [defaultServer]);
 
   const [searchLoading, setSearchLoading] = useState(false);
   const [episodesLoading, setEpisodesLoading] = useState(false);
@@ -38,15 +52,21 @@ function Streaming({ onShowAuth }) {
   const [searchError, setSearchError] = useState(null);
   const [sourceError, setSourceError] = useState(null);
 
+  const [oneTwoThreeId, setOneTwoThreeId] = useState(null);
+  const [oneTwoThreeLoading, setOneTwoThreeLoading] = useState(false);
+  const [oneTwoThreeEmbedUrl, setOneTwoThreeEmbedUrl] = useState(null);
+  const [oneTwoThreeError, setOneTwoThreeError] = useState(null);
+
   const [bookmarked, setBookmarked] = useState(false);
+  const [bookmarkCategory, setBookmarkCategory] = useState('');
   const [bookmarkLoading, setBookmarkLoading] = useState(false);
   const [relatedAnime, setRelatedAnime] = useState([]);
 
   // Episode pagination state
   const [episodesPage, setEpisodesPage] = useState(0);
 
-  // Player Refresh and Related load more states
-  const [playerResetKey, setPlayerResetKey] = useState(0);
+  // Watch progress and Related load more states
+  const [initialProgress, setInitialProgress] = useState(null);
   const [showAllRelated, setShowAllRelated] = useState(false);
 
   // Track if slug has been resolved for this anime ID
@@ -59,6 +79,7 @@ function Streaming({ onShowAuth }) {
       rangesScrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
     }
   }, []);
+
 
   // iOS check
   const IS_IOS = useMemo(() => {
@@ -126,6 +147,37 @@ function Streaming({ onShowAuth }) {
     }
   }
 
+  // Search 123Anime for matching anime
+  async function searchOneTwoThreeForAnime(animeData, cancelled) {
+    setOneTwoThreeLoading(true);
+    setOneTwoThreeError(null);
+
+    const titles = [...new Set([
+      animeData.title,
+      animeData.title_english,
+      animeData.title_japanese,
+    ].filter(Boolean))];
+
+    for (const title of titles) {
+      if (cancelled) return;
+      try {
+        const match = await search123Anime(title);
+        if (match && match.id) {
+          setOneTwoThreeId(match.id);
+          setOneTwoThreeLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error(`123Anime search failed for "${title}":`, err);
+      }
+    }
+
+    if (!cancelled) {
+      setOneTwoThreeError('Anime not found on 123Anime server.');
+      setOneTwoThreeLoading(false);
+    }
+  }
+
   // ---- Step 1+2: Fetch Jikan + search Anikage IN PARALLEL ----
   useEffect(() => {
     let cancelled = false;
@@ -140,6 +192,9 @@ function Streaming({ onShowAuth }) {
       setAnikageEpisodes([]);
       setSearchError(null);
       setStreamSources([]);
+      setOneTwoThreeId(null);
+      setOneTwoThreeEmbedUrl(null);
+      setOneTwoThreeError(null);
     });
     resolvedForId.current = null;
 
@@ -165,6 +220,9 @@ function Streaming({ onShowAuth }) {
         if (!slugCache.has(malId)) {
           searchAnikageForAnime(data.data, malId, cancelled);
         }
+
+        // Search 123Anime
+        searchOneTwoThreeForAnime(data.data, cancelled);
       } catch (err) {
         if (!cancelled) { console.error('Jikan error:', err); setAnimeLoading(false); }
       }
@@ -198,36 +256,61 @@ function Streaming({ onShowAuth }) {
 
   // ---- Step 4: Get stream when episode changes ----
   useEffect(() => {
-    if (!anikageSlug) return;
     let cancelled = false;
 
     const fetchStream = async () => {
-      setSourceLoading(true);
-      setSourceError(null);
-      setStreamSources([]);
-      setIntroTimestamp(null);
-      setOutroTimestamp(null);
+      if (activeServer === 'pahe') {
+        if (!anikageSlug) return;
+        setSourceLoading(true);
+        setSourceError(null);
+        setStreamSources([]);
+        setIntroTimestamp(null);
+        setOutroTimestamp(null);
 
-      try {
-        const data = await getAnikageStreams(anikageSlug, currentEpisode);
-        if (cancelled) return;
-        if (!data?.sources?.length) {
-          setSourceError('No streaming source for this episode.');
-          return;
+        try {
+          const data = await getAnikageStreams(anikageSlug, currentEpisode);
+          if (cancelled) return;
+          if (!data?.sources?.length) {
+            setSourceError('No streaming source for this episode.');
+            return;
+          }
+          setStreamSources(data.sources);
+          setIntroTimestamp(data.intro);
+          setOutroTimestamp(data.outro);
+        } catch (err) {
+          if (!cancelled) { console.error('Stream error:', err); setSourceError('Failed to load stream.'); }
+        } finally {
+          if (!cancelled) setSourceLoading(false);
         }
-        setStreamSources(data.sources);
-        setIntroTimestamp(data.intro);
-        setOutroTimestamp(data.outro);
-      } catch (err) {
-        if (!cancelled) { console.error('Stream error:', err); setSourceError('Failed to load stream.'); }
-      } finally {
-        if (!cancelled) setSourceLoading(false);
+      } else if (activeServer === '123') {
+        if (!oneTwoThreeId) return;
+        setSourceLoading(true);
+        setSourceError(null);
+        setOneTwoThreeEmbedUrl(null);
+        setStreamSources([]);
+
+        try {
+          const data = await get123AnimeStream(oneTwoThreeId, currentEpisode);
+          if (cancelled) return;
+          if (!data || !data.streaming_link) {
+            setSourceError('No streaming source for this episode.');
+            return;
+          }
+          setOneTwoThreeEmbedUrl(data.streaming_link);
+          if (data.direct_m3u8) {
+            setStreamSources([{ quality: '123Anime', streamUrl: data.direct_m3u8 }]);
+          }
+        } catch (err) {
+          if (!cancelled) { console.error('123Anime stream fetch error:', err); setSourceError('Failed to load stream.'); }
+        } finally {
+          if (!cancelled) setSourceLoading(false);
+        }
       }
     };
 
     fetchStream();
     return () => { cancelled = true; };
-  }, [anikageSlug, currentEpisode]);
+  }, [activeServer, anikageSlug, oneTwoThreeId, currentEpisode]);
 
   // ---- Related anime (delayed to not block) ----
   useEffect(() => {
@@ -261,12 +344,41 @@ function Streaming({ onShowAuth }) {
     return () => window.removeEventListener('message', handleMessage);
   }, [id, currentEpisode]);
 
-    // empty hook slot
+  // ---- Fetch watch progress asynchronously ----
+  useEffect(() => {
+    let active = true;
+    async function fetchProgress() {
+      setInitialProgress(null);
+      try {
+        const time = await getEpisodeProgress(parseInt(id), currentEpisode);
+        if (active) {
+          setInitialProgress(time || 0);
+        }
+      } catch (err) {
+        console.error('Failed to get episode progress:', err);
+        if (active) setInitialProgress(0);
+      }
+    }
+    fetchProgress();
+    return () => { active = false; };
+  }, [id, currentEpisode, user]);
 
   // ---- Bookmark ----
   useEffect(() => {
     if (!anime || !isAuthenticated || !user) return;
-    isBookmarked(user.uid, anime.mal_id).then(setBookmarked);
+    getBookmarks(user.uid).then(list => {
+      const item = list.find(b => b.mal_id === anime.mal_id);
+      if (item) {
+        setBookmarked(true);
+        setBookmarkCategory(item.category || 'Plan to Watch');
+      } else {
+        setBookmarked(false);
+        setBookmarkCategory('');
+      }
+    }).catch(() => {
+      setBookmarked(false);
+      setBookmarkCategory('');
+    });
   }, [anime, isAuthenticated, user]);
 
   const handleBookmark = useCallback(async () => {
@@ -280,34 +392,84 @@ function Streaming({ onShowAuth }) {
       if (bookmarked) {
         await removeBookmark(user.uid, anime.mal_id);
         setBookmarked(false);
+        setBookmarkCategory('');
       } else {
-        await addBookmark(user.uid, anime);
+        await addBookmark(user.uid, anime, 'Plan to Watch');
         setBookmarked(true);
+        setBookmarkCategory('Plan to Watch');
       }
     } catch (err) { console.error(err); }
     finally { setBookmarkLoading(false); }
   }, [anime, bookmarked, bookmarkLoading, isAuthenticated, user, onShowAuth]);
 
-  // ---- Refresh Video ----
-  const handleRefreshVideo = useCallback(() => {
-    setPlayerResetKey(prev => prev + 1);
-  }, []);
+  const handleCategoryChange = async (newCategory) => {
+    if (!isAuthenticated || !anime || bookmarkLoading) return;
+    setBookmarkLoading(true);
+    try {
+      const success = await updateBookmarkCategory(user.uid, anime.mal_id, newCategory);
+      if (success) {
+        setBookmarkCategory(newCategory);
+      }
+    } catch (err) {
+      console.error('Failed to change bookmark category:', err);
+    } finally {
+      setBookmarkLoading(false);
+    }
+  };
+
+
 
   // ---- Episode list (from Anikage or generated) ----
   const episodeList = useMemo(() => {
+    // Determine the count of episodes that have actually aired
+    let count = 0;
     if (anikageEpisodes.length > 0) {
-      return anikageEpisodes.filter(ep => ep.number > 0).sort((a, b) => a.number - b.number);
+      count = anikageEpisodes.length;
+    } else if (totalEpisodeCount > 0) {
+      count = totalEpisodeCount;
+    } else if (anime) {
+      if (anime.status === 'Finished Airing') {
+        count = anime.episodes || 1;
+      } else {
+        // Currently Airing or Upcoming: only show up to currentEpisode
+        count = currentEpisode;
+      }
     }
-    const count = totalEpisodeCount || anime?.episodes || 0;
-    if (count > 0) {
-      // Allow up to 1500 episodes for long running anime
-      return Array.from({ length: Math.min(count, 1500) }, (_, i) => ({ number: i + 1, title: `Episode ${i + 1}` }));
+
+    if (activeServer === 'pahe') {
+      if (anikageEpisodes.length > 0) {
+        return anikageEpisodes.filter(ep => ep.number > 0).sort((a, b) => a.number - b.number);
+      }
+      if (count > 0) {
+        // Allow up to 1500 episodes for long running anime
+        return Array.from({ length: Math.min(count, 1500) }, (_, i) => ({ number: i + 1, title: `Episode ${i + 1}` }));
+      }
+      return [];
+    } else {
+      // For Koto: we always show up to the currently aired count
+      return Array.from({ length: Math.max(count, currentEpisode) }, (_, i) => {
+        const existing = anikageEpisodes.find(ep => ep.number === i + 1);
+        return {
+          number: i + 1,
+          title: existing?.title || `Episode ${i + 1}`,
+          img: existing?.img || null
+        };
+      });
     }
-    return [];
-  }, [anikageEpisodes, totalEpisodeCount, anime?.episodes]);
+  }, [anikageEpisodes, totalEpisodeCount, anime, activeServer, currentEpisode]);
 
   const maxEpisode = episodeList.length > 0 ? Math.max(...episodeList.map(ep => ep.number)) : 0;
-  const currentEpInfo = anikageEpisodes.find(ep => ep.number === currentEpisode);
+
+  const currentEpInfo = useMemo(() => {
+    const existing = anikageEpisodes.find(ep => ep.number === currentEpisode);
+    if (existing) return existing;
+    return {
+      number: currentEpisode,
+      title: `Episode ${currentEpisode}`,
+      img: anime?.images?.jpg?.large_image_url || null,
+      description: ''
+    };
+  }, [anikageEpisodes, currentEpisode, anime]);
 
   // ---- Episode Pagination calculations ----
   const PAGE_SIZE = 100;
@@ -327,10 +489,10 @@ function Streaming({ onShowAuth }) {
 
   // ---- Update watch history when anime and episode are playing ----
   useEffect(() => {
-    if (anime && (streamSources.length > 0 || activeServer === 'koto')) {
+    if (anime && (streamSources.length > 0 || activeServer === 'koto' || (activeServer === '123' && oneTwoThreeEmbedUrl))) {
       updateWatchHistory(anime, currentEpisode, currentEpInfo?.img);
     }
-  }, [anime, currentEpisode, streamSources, currentEpInfo, activeServer]);
+  }, [anime, currentEpisode, streamSources, currentEpInfo, activeServer, oneTwoThreeEmbedUrl]);
 
   // ---- Episode nav handlers ----
   const handleEpisodeSelect = useCallback((n) => { if (n !== currentEpisode) setCurrentEpisode(n); }, [currentEpisode]);
@@ -374,7 +536,33 @@ function Streaming({ onShowAuth }) {
                 sandbox="allow-scripts allow-same-origin"
                 title={`${titleDisplay} - Episode ${currentEpisode} (Koto)`}
               />
-            ) : sourceLoading || searchLoading ? (
+            ) : activeServer === '123' ? (
+              oneTwoThreeLoading || sourceLoading || initialProgress === null ? (
+                <div className="streaming-player-loading">
+                  <div className="spinner" />
+                  <span>{oneTwoThreeLoading ? 'Finding anime on 123Anime...' : `Loading ep ${currentEpisode}...`}</span>
+                </div>
+              ) : oneTwoThreeError || sourceError ? (
+                <div className="streaming-player-error">
+                  <AlertCircle size={40} />
+                  <span>{oneTwoThreeError || sourceError}</span>
+                </div>
+              ) : oneTwoThreeEmbedUrl ? (
+                <iframe
+                  src={oneTwoThreeEmbedUrl}
+                  className="streaming-iframe"
+                  allowFullScreen
+                  scrolling="no"
+                  sandbox="allow-scripts allow-same-origin"
+                  title={`${titleDisplay} - Episode ${currentEpisode} (123Anime)`}
+                />
+              ) : (
+                <div className="streaming-player-error">
+                  <AlertCircle size={40} />
+                  <span>No streaming source available for 123Anime.</span>
+                </div>
+              )
+            ) : sourceLoading || searchLoading || initialProgress === null ? (
               <div className="streaming-player-loading">
                 <div className="spinner" />
                 <span>{searchLoading ? 'Finding anime...' : `Loading ep ${currentEpisode}...`}</span>
@@ -387,20 +575,21 @@ function Streaming({ onShowAuth }) {
             ) : streamSources.length > 0 ? (
               IS_IOS && bestSource ? (
                 <iframe
-                  src={`/embed.html?url=${encodeURIComponent(bestSource.streamUrl)}&poster=${encodeURIComponent(anime?.images?.jpg?.large_image_url || '')}&t=${getEpisodeProgress(parseInt(id), currentEpisode)}`}
+                  src={`/embed.html?url=${encodeURIComponent(bestSource.streamUrl)}&poster=${encodeURIComponent(anime?.images?.jpg?.large_image_url || '')}&t=${initialProgress}`}
                   className="streaming-iframe"
                   allowFullScreen
                   scrolling="no"
+                  sandbox="allow-scripts allow-same-origin"
                   title={`${titleDisplay} - Episode ${currentEpisode}`}
                 />
               ) : (
                 <HlsPlayer
-                  key={`${anikageSlug}-${currentEpisode}-${playerResetKey}`}
+                  key={`${anikageSlug}-${currentEpisode}`}
                   sources={streamSources}
                   title={`${titleDisplay} - Episode ${currentEpisode}`}
                   intro={introTimestamp}
                   outro={outroTimestamp}
-                  initialTime={getEpisodeProgress(parseInt(id), currentEpisode)}
+                  initialTime={initialProgress}
                   onProgress={(time, duration) => {
                     saveEpisodeProgress(parseInt(id), currentEpisode, time, duration);
                   }}
@@ -461,12 +650,30 @@ function Streaming({ onShowAuth }) {
             {synopsis && <p className="streaming-synopsis">{synopsis}</p>}
             <div className="streaming-info-actions">
               <Link to={`/anime/${id}`} className="btn btn-secondary"><ExternalLink size={14} /> Full Details</Link>
-              <button className={`btn ${bookmarked ? 'btn-bookmark-active' : 'btn-secondary'}`} onClick={handleBookmark} disabled={bookmarkLoading}>
-                <Bookmark size={14} fill={bookmarked ? 'currentColor' : 'none'} />{bookmarked ? 'Bookmarked' : 'Bookmark'}
-              </button>
-              <button className="btn btn-secondary" onClick={handleRefreshVideo}>
-                <RefreshCw size={14} /> Refresh Video
-              </button>
+              <div className="streaming-bookmark-wrapper">
+                <button className={`btn ${bookmarked ? 'btn-bookmark-active' : 'btn-secondary'}`} onClick={handleBookmark} disabled={bookmarkLoading}>
+                  {bookmarkLoading ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Bookmark size={14} fill={bookmarked ? 'currentColor' : 'none'} />
+                  )}
+                  {bookmarked ? 'Bookmarked' : 'Bookmark'}
+                </button>
+                {bookmarked && (
+                  <select
+                    className="bookmark-category-select"
+                    value={bookmarkCategory}
+                    onChange={(e) => handleCategoryChange(e.target.value)}
+                    disabled={bookmarkLoading}
+                  >
+                    <option value="Watching">Watching</option>
+                    <option value="Plan to Watch">Plan to Watch</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Dropped">Dropped</option>
+                    <option value="On Hold">On Hold</option>
+                  </select>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -527,7 +734,7 @@ function Streaming({ onShowAuth }) {
                 ))}
               </div>
             </>
-          ) : searchError ? (
+          ) : (activeServer === 'pahe' && searchError) ? (
             <div className="streaming-episodes-empty"><AlertCircle size={24} /><p>{searchError}</p></div>
           ) : (
             <div className="streaming-episodes-empty"><AlertCircle size={24} /><p>No episodes available.</p></div>
@@ -587,6 +794,17 @@ function Streaming({ onShowAuth }) {
                 }}
               >
                 <span>Koto</span>
+                <span className="server-status-dot" />
+              </button>
+              <button
+                type="button"
+                className={`server-modal-option ${activeServer === '123' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveServer('123');
+                  setShowServerModal(false);
+                }}
+              >
+                <span>123</span>
                 <span className="server-status-dot" />
               </button>
             </div>

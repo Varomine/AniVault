@@ -8,6 +8,8 @@ import AuthModal from './components/AuthModal/AuthModal';
 const Home = lazy(() => import('./pages/Home/Home'));
 const Browse = lazy(() => import('./pages/Browse/Browse'));
 const Schedule = lazy(() => import('./pages/Schedule/Schedule'));
+const Music = lazy(() => import('./pages/Music/Music'));
+const Torrent = lazy(() => import('./pages/Torrent/Torrent'));
 const Bookmark = lazy(() => import('./pages/Bookmark/Bookmark'));
 const AnimeDetail = lazy(() => import('./pages/AnimeDetail/AnimeDetail'));
 const Streaming = lazy(() => import('./pages/Streaming/Streaming'));
@@ -33,6 +35,8 @@ function App() {
             <Route path="/" element={<Home onShowAuth={() => setShowAuthModal(true)} />} />
             <Route path="/browse" element={<Browse onShowAuth={() => setShowAuthModal(true)} />} />
             <Route path="/schedule" element={<Schedule />} />
+            <Route path="/music" element={<Music />} />
+            <Route path="/torrent" element={<Torrent />} />
             <Route
               path="/bookmarks"
               element={<Bookmark onShowAuth={() => setShowAuthModal(true)} />}

@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Star, Play, Bookmark, Clock, Calendar, Tv, ExternalLink } from 'lucide-react';
+import { Star, Play, Bookmark, Clock, Calendar, Tv, Loader2 } from 'lucide-react';
 import { getAnimeById, getAnimeCharacters, getAnimeRecommendations, getAnimeEpisodes, getStatusText, getStatusClass } from '../../services/jikanApi';
 import AnimeRow from '../../components/AnimeRow/AnimeRow';
 import { searchAnikage, getAnikageEpisodes } from '../../services/animepaheApi';
 import { useAuth } from '../../contexts/AuthContext';
-import { addBookmark, removeBookmark, isBookmarked } from '../../services/bookmarkService';
+import { addBookmark, removeBookmark, getBookmarks, updateBookmarkCategory } from '../../services/bookmarkService';
 import './AnimeDetail.css';
 
 function AnimeDetail({ onShowAuth }) {
@@ -24,6 +24,7 @@ function AnimeDetail({ onShowAuth }) {
   const [error, setError] = useState(null);
   const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
+  const [bookmarkCategory, setBookmarkCategory] = useState('');
   const [bookmarkLoading, setBookmarkLoading] = useState(false);
   const [episodesPage, setEpisodesPage] = useState(0);
 
@@ -153,10 +154,18 @@ function AnimeDetail({ onShowAuth }) {
     async function checkBookmark() {
       if (!anime) return;
       if (isAuthenticated && user) {
-        const result = await isBookmarked(user.uid, anime.mal_id);
-        setBookmarked(result);
+        const list = await getBookmarks(user.uid);
+        const item = list.find(b => b.mal_id === anime.mal_id);
+        if (item) {
+          setBookmarked(true);
+          setBookmarkCategory(item.category || 'Plan to Watch');
+        } else {
+          setBookmarked(false);
+          setBookmarkCategory('');
+        }
       } else {
         setBookmarked(false);
+        setBookmarkCategory('');
       }
     }
     checkBookmark();
@@ -173,13 +182,30 @@ function AnimeDetail({ onShowAuth }) {
       if (bookmarked) {
         await removeBookmark(user.uid, anime.mal_id);
         setBookmarked(false);
+        setBookmarkCategory('');
       } else {
-        await addBookmark(user.uid, anime);
+        await addBookmark(user.uid, anime, 'Plan to Watch');
         setBookmarked(true);
+        setBookmarkCategory('Plan to Watch');
       }
     } catch (err) { console.error('Bookmark action failed:', err); }
     finally { setBookmarkLoading(false); }
   }, [anime, bookmarked, bookmarkLoading, isAuthenticated, user, onShowAuth]);
+
+  const handleCategoryChange = async (newCategory) => {
+    if (!isAuthenticated || !anime || bookmarkLoading) return;
+    setBookmarkLoading(true);
+    try {
+      const success = await updateBookmarkCategory(user.uid, anime.mal_id, newCategory);
+      if (success) {
+        setBookmarkCategory(newCategory);
+      }
+    } catch (err) {
+      console.error('Failed to change bookmark category:', err);
+    } finally {
+      setBookmarkLoading(false);
+    }
+  };
 
   const computedEpisodes = useMemo(() => {
     if (episodes.length > 0) {
@@ -269,10 +295,35 @@ function AnimeDetail({ onShowAuth }) {
             {synopsis.length > 300 && <button className="detail-synopsis-toggle" onClick={() => setSynopsisExpanded(!synopsisExpanded)}>{synopsisExpanded ? 'SHOW LESS' : 'READ FULL SYNOPSIS'}</button>}
             <div className="detail-actions">
               <Link to={`/watch/${anime.mal_id}`} className="btn btn-primary"><Play size={16} /> Watch Episode 1</Link>
-              {trailerUrl && <a href={trailerUrl} target="_blank" rel="noopener noreferrer" className="btn btn-secondary"><ExternalLink size={16} /> Watch Trailer</a>}
-              <button className={`btn ${bookmarked ? 'btn-bookmark-active' : 'btn-secondary'}`} onClick={handleBookmark} disabled={bookmarkLoading}>
-                <Bookmark size={16} fill={bookmarked ? 'currentColor' : 'none'} />{bookmarked ? 'Bookmarked' : 'Bookmark'}
-              </button>
+              {trailerUrl && (
+                <a href={trailerUrl} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">
+                  <Play size={16} fill="currentColor" /> Preview
+                </a>
+              )}
+              <div className="detail-bookmark-wrapper">
+                <button className={`btn ${bookmarked ? 'btn-bookmark-active' : 'btn-secondary'}`} onClick={handleBookmark} disabled={bookmarkLoading}>
+                  {bookmarkLoading ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Bookmark size={16} fill={bookmarked ? 'currentColor' : 'none'} />
+                  )}
+                  {bookmarked ? 'Bookmarked' : 'Bookmark'}
+                </button>
+                {bookmarked && (
+                  <select
+                    className="bookmark-category-select"
+                    value={bookmarkCategory}
+                    onChange={(e) => handleCategoryChange(e.target.value)}
+                    disabled={bookmarkLoading}
+                  >
+                    <option value="Watching">Watching</option>
+                    <option value="Plan to Watch">Plan to Watch</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Dropped">Dropped</option>
+                    <option value="On Hold">On Hold</option>
+                  </select>
+                )}
+              </div>
             </div>
           </div>
         </div>

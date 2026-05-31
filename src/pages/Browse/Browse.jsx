@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, X, Filter, ChevronLeft, ChevronRight, SlidersHorizontal, Check } from 'lucide-react';
+import { Search, X, Filter, ChevronLeft, ChevronRight, SlidersHorizontal, Check, ChevronDown } from 'lucide-react';
 import AnimeCard from '../../components/AnimeCard/AnimeCard';
 import { searchAnime, getSeasonalAnime, getGenres } from '../../services/jikanApi';
 import useDebounce from '../../hooks/useDebounce';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSettings } from '../../contexts/SettingsContext';
 import { addBookmark, removeBookmark, getBookmarks } from '../../services/bookmarkService';
 import './Browse.css';
 
@@ -53,6 +54,7 @@ export default function Browse({ onShowAuth }) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const { user, isAuthenticated } = useAuth();
+  const { nsfw } = useSettings();
   const [userBookmarks, setUserBookmarks] = useState([]);
 
   // Fetch all user bookmarks
@@ -131,6 +133,15 @@ export default function Browse({ onShowAuth }) {
 
   const genreDropdownRef = useRef(null);
   const genreInputRef = useRef(null);
+  
+  const sortDropdownRef = useRef(null);
+  const sortTriggerRef = useRef(null);
+  const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
+
+  const yearDropdownRef = useRef(null);
+  const yearTriggerRef = useRef(null);
+  const [yearDropdownOpen, setYearDropdownOpen] = useState(false);
+
   const prevFiltersRef = useRef('');
 
   const debouncedGenreSearch = useDebounce(genreSearchText, 300);
@@ -153,9 +164,10 @@ export default function Browse({ onShowAuth }) {
     return () => { cancelled = true; };
   }, []);
 
-  // ---- Close genre dropdown on outside click ----
+  // ---- Close dropdowns on outside click ----
   useEffect(() => {
     function handleClickOutside(e) {
+      // Genre dropdown
       if (
         genreDropdownRef.current &&
         !genreDropdownRef.current.contains(e.target) &&
@@ -163,6 +175,24 @@ export default function Browse({ onShowAuth }) {
         !genreInputRef.current.contains(e.target)
       ) {
         setGenreDropdownOpen(false);
+      }
+      // Sort dropdown
+      if (
+        sortDropdownRef.current &&
+        !sortDropdownRef.current.contains(e.target) &&
+        sortTriggerRef.current &&
+        !sortTriggerRef.current.contains(e.target)
+      ) {
+        setSortDropdownOpen(false);
+      }
+      // Year dropdown
+      if (
+        yearDropdownRef.current &&
+        !yearDropdownRef.current.contains(e.target) &&
+        yearTriggerRef.current &&
+        !yearTriggerRef.current.contains(e.target)
+      ) {
+        setYearDropdownOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -210,7 +240,7 @@ export default function Browse({ onShowAuth }) {
         const useSeasonal = season && year;
 
         if (useSeasonal) {
-          const params = { page, limit: ITEMS_PER_PAGE };
+          const params = { page, limit: ITEMS_PER_PAGE, sfw: !nsfw };
           if (selectedGenreIds.length > 0) params.genres = selectedGenreIds.join(',');
           if (selectedFormats.length === 1) params.filter = selectedFormats[0];
           const sortOption = SORT_OPTIONS.find((o) => o.value === sortBy);
@@ -223,7 +253,7 @@ export default function Browse({ onShowAuth }) {
           const params = {
             page,
             limit: ITEMS_PER_PAGE,
-            sfw: true,
+            sfw: !nsfw,
           };
           if (debouncedQuery) params.q = debouncedQuery;
           if (selectedGenreIds.length > 0) params.genres = selectedGenreIds.join(',');
@@ -257,7 +287,7 @@ export default function Browse({ onShowAuth }) {
 
     fetchAnime();
     return () => { cancelled = true; };
-  }, [selectedGenreIds, sortBy, year, season, selectedFormats, status, page, debouncedQuery]);
+  }, [selectedGenreIds, sortBy, year, season, selectedFormats, status, page, debouncedQuery, nsfw]);
 
   // ---- Genre handlers ----
   const toggleGenre = useCallback((genreId) => {
@@ -448,37 +478,88 @@ export default function Browse({ onShowAuth }) {
           )}
         </div>
 
-        {/* Sort By */}
-        <div className="browse-select-group">
+        {/* Sort By (Custom Dropdown) */}
+        <div className="browse-custom-dropdown" ref={sortTriggerRef}>
           <span className="browse-select-label">Sort</span>
-          <select
-            className="browse-select"
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
+          <button
+            className={`browse-custom-dropdown-btn ${sortDropdownOpen ? 'active' : ''}`}
+            onClick={() => setSortDropdownOpen(prev => !prev)}
+            aria-label="Select sorting option"
           >
-            {SORT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+            {SORT_OPTIONS.find((o) => o.value === sortBy)?.label || 'Score (Highest)'}
+            <ChevronDown size={14} className="browse-custom-dropdown-chevron" />
+          </button>
+
+          {sortDropdownOpen && (
+            <div className="browse-custom-dropdown-menu" ref={sortDropdownRef}>
+              {SORT_OPTIONS.map((opt) => {
+                const isSelected = sortBy === opt.value;
+                return (
+                  <div
+                    key={opt.value}
+                    className={`browse-custom-dropdown-option ${isSelected ? 'selected' : ''}`}
+                    onClick={() => {
+                      setSortBy(opt.value);
+                      setSortDropdownOpen(false);
+                    }}
+                  >
+                    <span className="browse-genre-option-check">
+                      <Check size={10} />
+                    </span>
+                    {opt.label}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Year */}
-        <div className="browse-select-group">
+        {/* Year (Custom Dropdown) */}
+        <div className="browse-custom-dropdown" ref={yearTriggerRef}>
           <span className="browse-select-label">Year</span>
-          <select
-            className="browse-select"
-            value={year}
-            onChange={(e) => setYear(e.target.value)}
+          <button
+            className={`browse-custom-dropdown-btn ${yearDropdownOpen ? 'active' : ''}`}
+            onClick={() => setYearDropdownOpen(prev => !prev)}
+            aria-label="Select year"
           >
-            <option value="">All Years</option>
-            {YEARS.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
+            {year || 'All Years'}
+            <ChevronDown size={14} className="browse-custom-dropdown-chevron" />
+          </button>
+
+          {yearDropdownOpen && (
+            <div className="browse-custom-dropdown-menu browse-custom-dropdown-menu--year" ref={yearDropdownRef}>
+              <div
+                className={`browse-custom-dropdown-option ${!year ? 'selected' : ''}`}
+                onClick={() => {
+                  setYear('');
+                  setYearDropdownOpen(false);
+                }}
+              >
+                <span className="browse-genre-option-check">
+                  <Check size={10} />
+                </span>
+                All Years
+              </div>
+              {YEARS.map((y) => {
+                const isSelected = String(year) === String(y);
+                return (
+                  <div
+                    key={y}
+                    className={`browse-custom-dropdown-option ${isSelected ? 'selected' : ''}`}
+                    onClick={() => {
+                      setYear(String(y));
+                      setYearDropdownOpen(false);
+                    }}
+                  >
+                    <span className="browse-genre-option-check">
+                      <Check size={10} />
+                    </span>
+                    {y}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Mobile Filter Toggle */}

@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Star, Play, Bookmark } from 'lucide-react';
+import { Star, Play, Bookmark, Loader2 } from 'lucide-react';
 import './AnimeCard.css';
 
 export default function AnimeCard({ anime, onClick, onBookmark, isBookmarked }) {
   const navigate = useNavigate();
+  const [localLoading, setLocalLoading] = useState(false);
 
   if (!anime) return null;
 
@@ -42,10 +44,17 @@ export default function AnimeCard({ anime, onClick, onBookmark, isBookmarked }) 
     }
   };
 
-  const handleBookmarkClick = (e) => {
+  const handleBookmarkClick = async (e) => {
     e.stopPropagation();
     if (onBookmark) {
-      onBookmark(anime);
+      setLocalLoading(true);
+      try {
+        await onBookmark(anime);
+      } catch (err) {
+        console.error('Failed to toggle bookmark:', err);
+      } finally {
+        setLocalLoading(false);
+      }
     }
   };
 
@@ -95,20 +104,27 @@ export default function AnimeCard({ anime, onClick, onBookmark, isBookmarked }) 
           <button
             className="anime-card-action-btn"
             onClick={handleTrailerClick}
-            aria-label="Watch trailer"
-            title="Watch trailer"
+            aria-label="Preview"
+            title="Preview"
           >
             <Play size={12} fill="currentColor" />
           </button>
         )}
-        <button
-          className={`anime-card-action-btn${isBookmarked ? ' bookmarked' : ''}`}
-          onClick={handleBookmarkClick}
-          aria-label={isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
-          title={isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
-        >
-          <Bookmark size={12} fill={isBookmarked ? 'currentColor' : 'none'} />
-        </button>
+        {!anime.isHistory && (
+          <button
+            className={`anime-card-action-btn${isBookmarked ? ' bookmarked' : ''}`}
+            onClick={handleBookmarkClick}
+            aria-label={isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
+            title={isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
+            disabled={localLoading}
+          >
+            {localLoading ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Bookmark size={12} fill={isBookmarked ? 'currentColor' : 'none'} />
+            )}
+          </button>
+        )}
       </div>
       {/* Resume Progress Bar */}
       {progressPercent > 0 && (

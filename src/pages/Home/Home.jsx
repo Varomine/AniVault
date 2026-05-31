@@ -9,6 +9,7 @@ import {
   Calendar,
   Bookmark,
   Eye as EyeIcon,
+  Loader2,
 } from 'lucide-react';
 import {
   getBannerAnime,
@@ -41,7 +42,7 @@ function Home({ onShowAuth }) {
   const [seasonal, setSeasonal] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
-  const [continueWatching] = useState(() => getWatchHistory());
+  const [continueWatching, setContinueWatching] = useState([]);
 
   // Loading states
   const [trendingLoading, setTrendingLoading] = useState(true);
@@ -54,6 +55,25 @@ function Home({ onShowAuth }) {
   const [isBannerBookmarked, setIsBannerBookmarked] = useState(false);
   const [userBookmarks, setUserBookmarks] = useState([]);
   const [bookmarkLoading, setBookmarkLoading] = useState(false);
+
+  // Fetch watch history when user changes
+  useEffect(() => {
+    let active = true;
+    const fetchHistory = async () => {
+      try {
+        const history = await getWatchHistory();
+        if (active) {
+          setContinueWatching(history);
+        }
+      } catch (err) {
+        console.error('Failed to fetch watch history:', err);
+      }
+    };
+    fetchHistory();
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   // Fetch whether current banner is bookmarked
   useEffect(() => {
@@ -435,7 +455,11 @@ function Home({ onShowAuth }) {
                   onClick={handleBannerBookmark}
                   disabled={bookmarkLoading}
                 >
-                  <Bookmark size={18} fill={isBannerBookmarked ? 'currentColor' : 'none'} />
+                  {bookmarkLoading ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    <Bookmark size={18} fill={isBannerBookmarked ? 'currentColor' : 'none'} />
+                  )}
                   {isBannerBookmarked ? 'Bookmarked' : 'Bookmark'}
                 </button>
               </div>
@@ -504,7 +528,7 @@ function Home({ onShowAuth }) {
           title="Trending Now"
           anime={trending}
           loading={trendingLoading}
-          viewAllLink="/browse?filter=airing"
+          viewAllLink="/browse?status=airing"
           onBookmark={handleCardBookmark}
           bookmarkedIds={userBookmarks}
         />
@@ -514,7 +538,7 @@ function Home({ onShowAuth }) {
           title="Popular This Season"
           anime={seasonal}
           loading={seasonalLoading}
-          viewAllLink="/browse?filter=season"
+          viewAllLink="/browse?year=2026&season=spring"
           onBookmark={handleCardBookmark}
           bookmarkedIds={userBookmarks}
         />
@@ -524,7 +548,7 @@ function Home({ onShowAuth }) {
           title="Most Favorite"
           anime={favorites}
           loading={favoritesLoading}
-          viewAllLink="/browse?filter=favorite"
+          viewAllLink="/browse"
           onBookmark={handleCardBookmark}
           bookmarkedIds={userBookmarks}
         />
@@ -534,7 +558,7 @@ function Home({ onShowAuth }) {
           title="Coming Soon"
           anime={upcoming}
           loading={upcomingLoading}
-          viewAllLink="/browse?filter=upcoming"
+          viewAllLink="/browse?status=upcoming"
           onBookmark={handleCardBookmark}
           bookmarkedIds={userBookmarks}
         />

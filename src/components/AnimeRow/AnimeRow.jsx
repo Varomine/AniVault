@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import AnimeCard from '../AnimeCard/AnimeCard.jsx';
@@ -8,6 +8,18 @@ export default function AnimeRow({ title, anime = [], loading, viewAllLink, onVi
   const containerRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
+
+  // Filter duplicates to prevent warning for duplicate keys
+  const uniqueAnime = useMemo(() => {
+    const seen = new Set();
+    return (anime || []).filter((item) => {
+      if (item && item.mal_id && !seen.has(item.mal_id)) {
+        seen.add(item.mal_id);
+        return true;
+      }
+      return false;
+    });
+  }, [anime]);
 
   const updateScrollButtons = useCallback(() => {
     const el = containerRef.current;
@@ -19,14 +31,20 @@ export default function AnimeRow({ title, anime = [], loading, viewAllLink, onVi
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    updateScrollButtons();
+    
+    // Delay check to ensure DOM has fully rendered and sized
+    const timer = setTimeout(() => {
+      updateScrollButtons();
+    }, 150);
+
     el.addEventListener('scroll', updateScrollButtons, { passive: true });
     window.addEventListener('resize', updateScrollButtons);
     return () => {
+      clearTimeout(timer);
       el.removeEventListener('scroll', updateScrollButtons);
       window.removeEventListener('resize', updateScrollButtons);
     };
-  }, [anime, updateScrollButtons]);
+  }, [uniqueAnime, updateScrollButtons]);
 
   const scroll = (direction) => {
     const el = containerRef.current;
@@ -54,7 +72,7 @@ export default function AnimeRow({ title, anime = [], loading, viewAllLink, onVi
     );
   }
 
-  if (!anime || anime.length === 0) return null;
+  if (uniqueAnime.length === 0) return null;
 
   return (
     <section className="anime-row">
@@ -70,7 +88,7 @@ export default function AnimeRow({ title, anime = [], loading, viewAllLink, onVi
       </div>
 
       {/* Scrollable Wrapper */}
-      <div className="anime-row-wrapper">
+      <div className={`anime-row-wrapper${canScrollLeft ? ' has-fade-left' : ''}${canScrollRight ? ' has-fade-right' : ''}`}>
         {/* Left Arrow */}
         <button
           className={`anime-row-arrow left${!canScrollLeft ? ' hidden' : ''}`}
@@ -82,7 +100,7 @@ export default function AnimeRow({ title, anime = [], loading, viewAllLink, onVi
 
         {/* Card Container */}
         <div className="anime-row-container" ref={containerRef}>
-          {anime.map((item) => (
+          {uniqueAnime.map((item) => (
             <AnimeCard
               key={item.mal_id}
               anime={item}

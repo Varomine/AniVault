@@ -17,7 +17,7 @@
 .anime-card:hover {
   transform: scale(1.05);
   box-shadow: var(--shadow-card-hover);
-  z-index: 2;
+  z-index: 10;
 }
 
 /* ---- Image ---- */

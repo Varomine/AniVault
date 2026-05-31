@@ -10,12 +10,11 @@
 }
 
 /* ============================================
-   Top Filter Bar (sticky below navbar)
+   Top Filter Bar (below navbar)
    ============================================ */
 .browse-top-bar {
-  position: sticky;
-  top: var(--navbar-height);
-  z-index: calc(var(--z-navbar) - 1);
+  position: relative;
+  z-index: 20;
   background: var(--bg-glass);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -503,10 +502,6 @@
   flex-shrink: 0;
   padding: var(--space-xl) var(--space-xl) var(--space-xl) 0;
   border-right: 1px solid var(--border-subtle);
-  position: sticky;
-  top: calc(var(--navbar-height) + var(--space-md));
-  max-height: calc(100vh - var(--navbar-height) - var(--space-xl));
-  overflow-y: auto;
 }
 
 /* Custom scrollbar for sticky sidebar */
@@ -765,4 +760,111 @@
     grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
     gap: var(--space-md);
   }
+}
+
+/* Custom Sort/Year Dropdown Styles */
+.browse-custom-dropdown {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.browse-custom-dropdown-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-sm);
+  min-width: 150px;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  white-space: nowrap;
+}
+
+.browse-custom-dropdown-btn:hover {
+  border-color: var(--accent-gold);
+}
+
+.browse-custom-dropdown-btn.active {
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 0 2px var(--accent-gold-dim);
+}
+
+.browse-custom-dropdown-chevron {
+  color: var(--text-muted);
+  transition: transform var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.browse-custom-dropdown-btn.active .browse-custom-dropdown-chevron {
+  transform: rotate(180deg);
+  color: var(--accent-gold);
+}
+
+.browse-custom-dropdown-menu {
+  position: absolute;
+  top: calc(100% + var(--space-xs));
+  right: 0;
+  min-width: 180px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xl);
+  z-index: var(--z-dropdown);
+  animation: fadeInDown 0.2s ease;
+  padding: var(--space-xs) 0;
+}
+
+.browse-custom-dropdown-menu::-webkit-scrollbar {
+  width: 4px;
+}
+
+.browse-custom-dropdown-menu::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: var(--radius-full);
+}
+
+.browse-custom-dropdown-menu--year {
+  min-width: 140px;
+}
+
+.browse-custom-dropdown-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.browse-custom-dropdown-option:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.browse-custom-dropdown-option.selected {
+  color: var(--accent-gold);
+  background: var(--accent-gold-dim);
+}
+
+.browse-custom-dropdown-option.selected .browse-genre-option-check {
+  background: var(--accent-gold);
+  border-color: var(--accent-gold);
+}
+
+.browse-custom-dropdown-option.selected .browse-genre-option-check svg {
+  opacity: 1;
 }
