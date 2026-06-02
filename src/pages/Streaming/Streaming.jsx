@@ -3,6 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Play, Bookmark, ExternalLink, Star, Tv, Clock, Calendar, AlertCircle, ChevronLeft, ChevronRight, X, Loader2 } from 'lucide-react';
 import { searchAnikage, getAnikageEpisodes, getAnikageStreams, getBestSource } from '../../services/animepaheApi';
 import { search123Anime, get123AnimeStream } from '../../services/123animeApi';
+import { searchAllAnime, getAllAnimeStream } from '../../services/allanimeApi';
+import { getHAnimeStreams } from '../../services/hanimeApi';
 import { getAnimeById, getAnimeRecommendations, getStatusText, getStatusClass } from '../../services/jikanApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -56,6 +58,10 @@ function Streaming({ onShowAuth }) {
   const [oneTwoThreeLoading, setOneTwoThreeLoading] = useState(false);
   const [oneTwoThreeEmbedUrl, setOneTwoThreeEmbedUrl] = useState(null);
   const [oneTwoThreeError, setOneTwoThreeError] = useState(null);
+
+  const [allAnimeId, setAllAnimeId] = useState(null);
+  const [allAnimeLoading, setAllAnimeLoading] = useState(false);
+  const [allAnimeError, setAllAnimeError] = useState(null);
 
   const [bookmarked, setBookmarked] = useState(false);
   const [bookmarkCategory, setBookmarkCategory] = useState('');
@@ -178,6 +184,37 @@ function Streaming({ onShowAuth }) {
     }
   }
 
+  // Search AllAnime for matching anime
+  async function searchAllAnimeForAnime(animeData, cancelled) {
+    setAllAnimeLoading(true);
+    setAllAnimeError(null);
+
+    const titles = [...new Set([
+      animeData.title_english,
+      animeData.title,
+      animeData.title_japanese,
+    ].filter(Boolean))];
+
+    for (const title of titles) {
+      if (cancelled) return;
+      try {
+        const match = await searchAllAnime(title);
+        if (match && match.id) {
+          setAllAnimeId(match.id);
+          setAllAnimeLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error(`AllAnime search failed for "${title}":`, err);
+      }
+    }
+
+    if (!cancelled) {
+      setAllAnimeError('Anime not found on AllAnime server.');
+      setAllAnimeLoading(false);
+    }
+  }
+
   // ---- Step 1+2: Fetch Jikan + search Anikage IN PARALLEL ----
   useEffect(() => {
     let cancelled = false;
@@ -195,6 +232,8 @@ function Streaming({ onShowAuth }) {
       setOneTwoThreeId(null);
       setOneTwoThreeEmbedUrl(null);
       setOneTwoThreeError(null);
+      setAllAnimeId(null);
+      setAllAnimeError(null);
     });
     resolvedForId.current = null;
 
@@ -223,6 +262,9 @@ function Streaming({ onShowAuth }) {
 
         // Search 123Anime
         searchOneTwoThreeForAnime(data.data, cancelled);
+
+        // Search AllAnime
+        searchAllAnimeForAnime(data.data, cancelled);
       } catch (err) {
         if (!cancelled) { console.error('Jikan error:', err); setAnimeLoading(false); }
       }
@@ -305,12 +347,50 @@ function Streaming({ onShowAuth }) {
         } finally {
           if (!cancelled) setSourceLoading(false);
         }
+      } else if (activeServer === 'allanime') {
+        if (!allAnimeId) return;
+        setSourceLoading(true);
+        setSourceError(null);
+        setStreamSources([]);
+
+        try {
+          const data = await getAllAnimeStream(allAnimeId, currentEpisode);
+          if (cancelled) return;
+          if (!data || !data.episode_url) {
+            setSourceError('No streaming source for this episode.');
+            return;
+          }
+          setStreamSources([{ quality: 'AllAnime', streamUrl: data.episode_url }]);
+        } catch (err) {
+          if (!cancelled) { console.error('AllAnime stream fetch error:', err); setSourceError('Failed to load stream.'); }
+        } finally {
+          if (!cancelled) setSourceLoading(false);
+        }
+      } else if (activeServer === 'hanime') {
+        if (!anime) return;
+        setSourceLoading(true);
+        setSourceError(null);
+        setStreamSources([]);
+
+        try {
+          const data = await getHAnimeStreams(anime, currentEpisode);
+          if (cancelled) return;
+          if (!data || !data.streams || data.streams.length === 0) {
+            setSourceError('No streaming source for this episode on HAnime.');
+            return;
+          }
+          setStreamSources(data.streams);
+        } catch (err) {
+          if (!cancelled) { console.error('HAnime stream fetch error:', err); setSourceError('Failed to load stream.'); }
+        } finally {
+          if (!cancelled) setSourceLoading(false);
+        }
       }
     };
 
     fetchStream();
     return () => { cancelled = true; };
-  }, [activeServer, anikageSlug, oneTwoThreeId, currentEpisode]);
+  }, [activeServer, anikageSlug, oneTwoThreeId, allAnimeId, currentEpisode, anime]);
 
   // ---- Related anime (delayed to not block) ----
   useEffect(() => {
@@ -562,6 +642,86 @@ function Streaming({ onShowAuth }) {
                   <span>No streaming source available for 123Anime.</span>
                 </div>
               )
+            ) : activeServer === 'allanime' ? (
+              allAnimeLoading || sourceLoading || initialProgress === null ? (
+                <div className="streaming-player-loading">
+                  <div className="spinner" />
+                  <span>{allAnimeLoading ? 'Finding anime on AllAnime...' : `Loading ep ${currentEpisode}...`}</span>
+                </div>
+              ) : allAnimeError || sourceError ? (
+                <div className="streaming-player-error">
+                  <AlertCircle size={40} />
+                  <span>{allAnimeError || sourceError}</span>
+                </div>
+              ) : streamSources.length > 0 ? (
+                IS_IOS && bestSource ? (
+                  <iframe
+                    src={`/embed.html?url=${encodeURIComponent(bestSource.streamUrl)}&poster=${encodeURIComponent(anime?.images?.jpg?.large_image_url || '')}&t=${initialProgress}`}
+                    className="streaming-iframe"
+                    allowFullScreen
+                    scrolling="no"
+                    sandbox="allow-scripts allow-same-origin"
+                    title={`${titleDisplay} - Episode ${currentEpisode} (AllAnime)`}
+                  />
+                ) : (
+                  <HlsPlayer
+                    key={`allanime-${id}-${currentEpisode}`}
+                    sources={streamSources}
+                    title={`${titleDisplay} - Episode ${currentEpisode}`}
+                    intro={introTimestamp}
+                    outro={outroTimestamp}
+                    initialTime={initialProgress}
+                    onProgress={(time, duration) => {
+                      saveEpisodeProgress(parseInt(id), currentEpisode, time, duration);
+                    }}
+                  />
+                )
+              ) : (
+                <div className="streaming-player-error">
+                  <AlertCircle size={40} />
+                  <span>No streaming source available for AllAnime.</span>
+                </div>
+              )
+            ) : activeServer === 'hanime' ? (
+              sourceLoading || initialProgress === null ? (
+                <div className="streaming-player-loading">
+                  <div className="spinner" />
+                  <span>{`Loading ep ${currentEpisode} on HAnime...`}</span>
+                </div>
+              ) : sourceError ? (
+                <div className="streaming-player-error">
+                  <AlertCircle size={40} />
+                  <span>{sourceError}</span>
+                </div>
+              ) : streamSources.length > 0 ? (
+                IS_IOS && bestSource ? (
+                  <iframe
+                    src={`/embed.html?url=${encodeURIComponent(bestSource.streamUrl)}&poster=${encodeURIComponent(anime?.images?.jpg?.large_image_url || '')}&t=${initialProgress}`}
+                    className="streaming-iframe"
+                    allowFullScreen
+                    scrolling="no"
+                    sandbox="allow-scripts allow-same-origin"
+                    title={`${titleDisplay} - Episode ${currentEpisode} (HAnime)`}
+                  />
+                ) : (
+                  <HlsPlayer
+                    key={`hanime-${id}-${currentEpisode}`}
+                    sources={streamSources}
+                    title={`${titleDisplay} - Episode ${currentEpisode}`}
+                    intro={introTimestamp}
+                    outro={outroTimestamp}
+                    initialTime={initialProgress}
+                    onProgress={(time, duration) => {
+                      saveEpisodeProgress(parseInt(id), currentEpisode, time, duration);
+                    }}
+                  />
+                )
+              ) : (
+                <div className="streaming-player-error">
+                  <AlertCircle size={40} />
+                  <span>No streaming source available for HAnime.</span>
+                </div>
+              )
             ) : sourceLoading || searchLoading || initialProgress === null ? (
               <div className="streaming-player-loading">
                 <div className="spinner" />
@@ -584,7 +744,7 @@ function Streaming({ onShowAuth }) {
                 />
               ) : (
                 <HlsPlayer
-                  key={`${anikageSlug}-${currentEpisode}`}
+                  key={`pahe-${id}-${currentEpisode}`}
                   sources={streamSources}
                   title={`${titleDisplay} - Episode ${currentEpisode}`}
                   intro={introTimestamp}
@@ -782,7 +942,13 @@ function Streaming({ onShowAuth }) {
                   setShowServerModal(false);
                 }}
               >
-                <span>pahe</span>
+                <div className="server-modal-details">
+                  <span className="server-name">pahe</span>
+                  <div className="server-tags">
+                    <span className="server-tag">Hard-Sub</span>
+                    <span className="server-tag">EN Sub Only</span>
+                  </div>
+                </div>
                 <span className="server-status-dot" />
               </button>
               <button
@@ -793,7 +959,13 @@ function Streaming({ onShowAuth }) {
                   setShowServerModal(false);
                 }}
               >
-                <span>Koto</span>
+                <div className="server-modal-details">
+                  <span className="server-name">Koto</span>
+                  <div className="server-tags">
+                    <span className="server-tag">Soft-Sub</span>
+                    <span className="server-tag best">Best Server</span>
+                  </div>
+                </div>
                 <span className="server-status-dot" />
               </button>
               <button
@@ -804,7 +976,47 @@ function Streaming({ onShowAuth }) {
                   setShowServerModal(false);
                 }}
               >
-                <span>123</span>
+                <div className="server-modal-details">
+                  <span className="server-name">123</span>
+                  <div className="server-tags">
+                    <span className="server-tag">Hard-Sub</span>
+                    <span className="server-tag">English Only</span>
+                  </div>
+                </div>
+                <span className="server-status-dot" />
+              </button>
+              <button
+                type="button"
+                className={`server-modal-option ${activeServer === 'allanime' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveServer('allanime');
+                  setShowServerModal(false);
+                }}
+              >
+                <div className="server-modal-details">
+                  <span className="server-name">AllAnime</span>
+                  <div className="server-tags">
+                    <span className="server-tag">Hard-Sub</span>
+                    <span className="server-tag">English Only</span>
+                  </div>
+                </div>
+                <span className="server-status-dot" />
+              </button>
+              <button
+                type="button"
+                className={`server-modal-option ${activeServer === 'hanime' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveServer('hanime');
+                  setShowServerModal(false);
+                }}
+              >
+                <div className="server-modal-details">
+                  <span className="server-name">HAnime</span>
+                  <div className="server-tags">
+                    <span className="server-tag hentai">Hard-Sub</span>
+                    <span className="server-tag hentai">18+ Only</span>
+                  </div>
+                </div>
                 <span className="server-status-dot" />
               </button>
             </div>

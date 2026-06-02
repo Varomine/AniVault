@@ -879,3 +879,73 @@
     justify-content: center;
   }
 }
+
+.server-modal-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  text-align: left;
+}
+
+.server-name {
+  font-size: var(--font-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  transition: color var(--transition-fast);
+}
+
+.server-tags {
+  display: flex;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.server-tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-glass-light);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all var(--transition-fast);
+}
+
+.server-tag.best {
+  background: var(--accent-gold-dim);
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+}
+
+.server-modal-option:hover .server-name,
+.server-modal-option.active .server-name {
+  color: var(--accent-gold);
+}
+
+.server-modal-option:hover .server-tag,
+.server-modal-option.active .server-tag {
+  border-color: rgba(228, 168, 93, 0.3);
+  color: var(--text-secondary);
+}
+
+.server-modal-option:hover .server-tag.best,
+.server-modal-option.active .server-tag.best {
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+}
+
+.server-tag.hentai {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+}
+
+.server-modal-option:hover .server-tag.hentai,
+.server-modal-option.active .server-tag.hentai {
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #ef4444;
+}

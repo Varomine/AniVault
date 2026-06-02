@@ -40,8 +40,21 @@
     }
 
     if (streamUrl) {
+      const isM3u8 = streamUrl.toLowerCase().includes('.m3u8') || streamUrl.toLowerCase().includes('index.txt') || streamUrl.toLowerCase().includes('/stream/');
+
+      if (!isM3u8) {
+        // Direct mp4/webm/etc playback natively
+        video.src = streamUrl;
+        if (initialTime > 0) {
+          const handleCanPlay = () => {
+            video.currentTime = initialTime;
+            video.removeEventListener('canplay', handleCanPlay);
+          };
+          video.addEventListener('canplay', handleCanPlay);
+        }
+      }
       // Check for native HLS support (Safari/iOS)
-      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = streamUrl;
         if (initialTime > 0) {
           const handleCanPlay = () => {

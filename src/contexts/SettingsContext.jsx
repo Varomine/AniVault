@@ -9,7 +9,7 @@ export function SettingsProvider({ children }) {
   });
 
   const [defaultServer, setDefaultServerState] = useState(() => {
-    return localStorage.getItem('anivault-default-server') || 'pahe';
+    return localStorage.getItem('anivault-default-server') || 'koto';
   });
 
   const [nsfw, setNsfwState] = useState(() => {
