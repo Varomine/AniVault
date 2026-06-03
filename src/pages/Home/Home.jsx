@@ -54,7 +54,6 @@ function Home({ onShowAuth }) {
   const [bannerAnime, setBannerAnime] = useState([]);
   const [currentBanner, setCurrentBanner] = useState(0);
   const [bannerLoading, setBannerLoading] = useState(true);
-  const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showTrailer, setShowTrailer] = useState(false);
 
@@ -195,7 +194,6 @@ function Home({ onShowAuth }) {
         setCurrentBanner((prev) =>
           prev >= bannerAnime.length - 1 ? 0 : prev + 1
         );
-        setSynopsisExpanded(false);
         setIsTransitioning(false);
       }, 500);
     }, 8000);
@@ -210,7 +208,6 @@ function Home({ onShowAuth }) {
       setIsTransitioning(true);
       setTimeout(() => {
         setCurrentBanner(newIndex);
-        setSynopsisExpanded(false);
         setIsTransitioning(false);
       }, 500);
 
@@ -431,33 +428,31 @@ function Home({ onShowAuth }) {
               {/* Synopsis */}
               {synopsis && (
                 <div className="hero-synopsis-wrapper">
-                  <p
-                    className={`hero-synopsis ${synopsis.length > 180 ? (synopsisExpanded ? 'expanded' : 'clamped') : ''}`}
-                  >
+                  <p className="hero-synopsis">
                     {synopsis}
                   </p>
-                  {synopsis.length > 180 && (
-                    <button
-                      className="hero-read-more"
-                      onClick={() => setSynopsisExpanded(!synopsisExpanded)}
-                    >
-                      {synopsisExpanded
-                        ? 'SHOW LESS'
-                        : 'READ FULL SYNOPSIS'}
-                    </button>
-                  )}
                 </div>
               )}
 
               {/* CTA Buttons */}
               <div className="hero-actions">
-                <button
-                  className="btn btn-primary hero-btn"
-                  onClick={() => navigate(`/watch/${anime?.mal_id}`)}
-                >
-                  <Play size={18} fill="currentColor" />
-                  Watch Episode 1
-                </button>
+                {anime?.status?.toLowerCase() === 'not yet aired' ? (
+                  <button
+                    className="btn btn-secondary hero-btn"
+                    disabled
+                    style={{ cursor: 'not-allowed', opacity: 0.6 }}
+                  >
+                    Not Yet Aired
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-primary hero-btn"
+                    onClick={() => navigate(`/watch/${anime?.mal_id}`)}
+                  >
+                    <Play size={18} fill="currentColor" />
+                    Watch Episode 1
+                  </button>
+                )}
 
                 {getYouTubeId(anime?.trailer) && (
                   <button

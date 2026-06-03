@@ -32,6 +32,48 @@
   <div class="artplayer-app"></div>
 
   <script>
+    // Security: Disable right click and dev tools shortcut keys inside the iframe
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('keydown', e => {
+      if (e.key === 'F12') {
+        e.preventDefault();
+      }
+      if (e.ctrlKey && (e.key === 'i' || e.key === 'I' || e.key === 'u' || e.key === 'U' || e.key === 's' || e.key === 'S' || e.key === 'c' || e.key === 'C' || e.key === 'j' || e.key === 'J')) {
+        e.preventDefault();
+      }
+      if (e.ctrlKey && e.shiftKey && (e.key === 'i' || e.key === 'I' || e.key === 'c' || e.key === 'C' || e.key === 'j' || e.key === 'J')) {
+        e.preventDefault();
+      }
+    });
+
+    // Security: Detect DevTools activation inside iframe and redirect parent window to Google
+    const detectDevTools = () => {
+      const startTime = performance.now();
+      debugger;
+      const endTime = performance.now();
+      if (endTime - startTime > 100) {
+        if (window.parent && window.parent !== window) {
+          window.parent.location.replace("https://google.com");
+        } else {
+          window.location.replace("https://google.com");
+        }
+        return;
+      }
+
+      const element = new Image();
+      Object.defineProperty(element, 'id', {
+        get() {
+          if (window.parent && window.parent !== window) {
+            window.parent.location.replace("https://google.com");
+          } else {
+            window.location.replace("https://google.com");
+          }
+        }
+      });
+      console.log(element);
+    };
+    setInterval(detectDevTools, 1000);
+
     const urlParams = new URLSearchParams(window.location.search);
     const singleUrl = urlParams.get('url');
     const sourcesParam = urlParams.get('sources');
@@ -121,7 +163,7 @@
         if (Array.isArray(parsedSubs) && parsedSubs.length > 0) {
           subtitleList = parsedSubs.map((sub, idx) => {
             return {
-              html: sub.label || sub.name || `Track ${idx + 1}`,
+              html: sub.label || sub.name || sub.lang || sub.language || `Track ${idx + 1}`,
               url: sub.url,
               default: idx === 0, // default to first one
             };
@@ -272,7 +314,13 @@
                     wasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker.wasm',
                     modernWasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker-modern.wasm',
                     legacyWasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker.wasm.js',
-                    availableFonts: { 'liberation sans': 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/default.woff2' },
+                    availableFonts: {
+                      'liberation sans': 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/default.woff2',
+                      'noto sans jp': 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-jp@latest/japanese-400-normal.woff2',
+                      'noto sans jp regular': 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-jp@latest/japanese-400-normal.woff2',
+                      'noto sans thai': 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-thai@latest/thai-400-normal.woff2',
+                      'noto sans thai regular': 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-thai@latest/thai-400-normal.woff2'
+                    },
                   });
                   const pluginResult = pluginInitializer(art);
                   art.jassub = pluginResult.instance;
@@ -326,7 +374,13 @@
             wasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker.wasm',
             modernWasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker-modern.wasm',
             legacyWasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker.wasm.js',
-            availableFonts: { 'liberation sans': 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/default.woff2' },
+            availableFonts: {
+              'liberation sans': 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/default.woff2',
+              'noto sans jp': 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-jp@latest/japanese-400-normal.woff2',
+              'noto sans jp regular': 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-jp@latest/japanese-400-normal.woff2',
+              'noto sans thai': 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-thai@latest/thai-400-normal.woff2',
+              'noto sans thai regular': 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-thai@latest/thai-400-normal.woff2'
+            },
           });
           const pluginResult = pluginInitializer(art);
           art.jassub = pluginResult.instance;

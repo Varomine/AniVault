@@ -40,15 +40,21 @@
   background-repeat: no-repeat;
   filter: blur(2px) brightness(0.3);
   transform: scale(1.1);
-  transition: opacity 0.6s ease;
+  transition: opacity 0.6s cubic-bezier(0.25, 1, 0.5, 1), 
+              filter 0.6s cubic-bezier(0.25, 1, 0.5, 1), 
+              transform 0.6s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .hero-bg-enter {
   opacity: 1;
+  filter: blur(2px) brightness(0.3);
+  transform: scale(1.1);
 }
 
 .hero-bg-exit {
   opacity: 0;
+  filter: blur(12px) brightness(0.15);
+  transform: scale(1.05);
 }
 
 /* ---- Gradient Overlay ---- */
@@ -58,9 +64,9 @@
   background: linear-gradient(
     to bottom,
     transparent 0%,
-    rgba(10, 10, 10, 0.1) 30%,
-    rgba(10, 10, 10, 0.4) 55%,
-    rgba(10, 10, 10, 0.85) 80%,
+    rgba(var(--bg-primary-rgb), 0.1) 30%,
+    rgba(var(--bg-primary-rgb), 0.4) 55%,
+    rgba(var(--bg-primary-rgb), 0.85) 80%,
     var(--bg-primary) 100%
   );
   z-index: 1;
@@ -76,17 +82,51 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  transition: opacity 0.5s ease, transform 0.5s ease;
 }
 
-.hero-content-enter {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.hero-content-exit {
+/* Exit state: immediate fade out */
+.hero-content-exit > * {
   opacity: 0;
-  transform: translateY(12px);
+  transform: translateY(-8px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+/* Enter state: cascading animations applied to children */
+.hero-content-enter > * {
+  opacity: 0;
+  transform: translateY(18px);
+  animation: heroCascadeFadeIn 0.6s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+.hero-content-enter .hero-japanese-title {
+  animation-delay: 0.05s;
+}
+
+.hero-content-enter .hero-title {
+  animation-delay: 0.12s;
+}
+
+.hero-content-enter .hero-info-row {
+  animation-delay: 0.2s;
+}
+
+.hero-content-enter .hero-genres {
+  animation-delay: 0.25s;
+}
+
+.hero-content-enter .hero-synopsis-wrapper {
+  animation-delay: 0.3s;
+}
+
+.hero-content-enter .hero-actions {
+  animation-delay: 0.38s;
+}
+
+@keyframes heroCascadeFadeIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ---- Japanese Title ---- */
@@ -182,22 +222,35 @@
   line-height: 1.65;
   max-width: 580px;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
-  transition: all var(--transition-base);
   position: relative;
+  max-height: 4.95em;
+  overflow: hidden;
+  transition: max-height 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
 .hero-synopsis.clamped {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-height: 4.95em;
 }
 
 .hero-synopsis.expanded {
-  -webkit-line-clamp: unset;
-  display: block;
-  overflow: visible;
+  max-height: 500px;
+}
+
+.hero-synopsis::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  background: linear-gradient(to top, rgba(var(--bg-primary-rgb), 0.95), transparent);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.hero-synopsis.clamped::after {
+  opacity: 1;
 }
 
 .hero-read-more {
@@ -248,7 +301,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(20, 20, 20, 0.6);
+  background: rgba(var(--bg-card-rgb), 0.6);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border-subtle);
@@ -339,32 +392,18 @@
 @keyframes heroBgFadeIn {
   from {
     opacity: 0;
-    transform: scale(1.15);
+    filter: blur(10px) brightness(0.2);
+    transform: scale(1.18);
   }
   to {
     opacity: 1;
+    filter: blur(2px) brightness(0.3);
     transform: scale(1.1);
   }
 }
 
-@keyframes heroContentFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 .hero-bg-enter {
-  animation: heroBgFadeIn 0.8s ease forwards;
-}
-
-.hero-content-enter {
-  animation: heroContentFadeIn 0.6s ease 0.15s forwards;
-  opacity: 0;
+  animation: heroBgFadeIn 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
 /* ============================================

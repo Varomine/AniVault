@@ -110,6 +110,14 @@ function Streaming({ onShowAuth }) {
 
   // Search Anikage for matching anime
   async function searchAnikageForAnime(animeData, malId, cancelled) {
+    if (malId === 5042) {
+      slugCache.set(5042, { slug: '8XzUtDNZYp', totalEpisodes: 12 });
+      setAnikageSlug('8XzUtDNZYp');
+      setTotalEpisodeCount(12);
+      resolvedForId.current = 5042;
+      return;
+    }
+
     setSearchLoading(true);
     setSearchError(null);
 
@@ -296,7 +304,14 @@ function Streaming({ onShowAuth }) {
     resolvedForId.current = null;
 
     // Check slug cache
-    if (slugCache.has(malId)) {
+    if (malId === 5042) {
+      slugCache.set(5042, { slug: '8XzUtDNZYp', totalEpisodes: 12 });
+      Promise.resolve().then(() => {
+        if (cancelled) return;
+        setAnikageSlug('8XzUtDNZYp');
+        setTotalEpisodeCount(12);
+      });
+    } else if (slugCache.has(malId)) {
       const cached = slugCache.get(malId);
       Promise.resolve().then(() => {
         if (cancelled) return;
@@ -314,7 +329,9 @@ function Streaming({ onShowAuth }) {
         setAnimeLoading(false);
 
         // Only search Anikage if not cached
-        if (!slugCache.has(malId)) {
+        if (malId === 5042) {
+          // Already overridden
+        } else if (!slugCache.has(malId)) {
           searchAnikageForAnime(data.data, malId, cancelled);
         }
 
@@ -362,7 +379,7 @@ function Streaming({ onShowAuth }) {
     let cancelled = false;
 
     const fetchStream = async () => {
-      if (activeServer === 'pahe') {
+      if (activeServer === 'pahe' || activeServer === 'miko') {
         if (!anikageSlug) return;
         setSourceLoading(true);
         setSourceError(null);
@@ -371,7 +388,7 @@ function Streaming({ onShowAuth }) {
         setOutroTimestamp(null);
 
         try {
-          const data = await getAnikageStreams(anikageSlug, currentEpisode);
+          const data = await getAnikageStreams(anikageSlug, currentEpisode, activeServer);
           if (cancelled) return;
           if (!data?.sources?.length) {
             setSourceError('No streaming source for this episode.');
@@ -600,7 +617,7 @@ function Streaming({ onShowAuth }) {
       }
     }
 
-    if (activeServer === 'pahe') {
+    if (activeServer === 'pahe' || activeServer === 'miko') {
       if (anikageEpisodes.length > 0) {
         return anikageEpisodes.filter(ep => ep.number > 0).sort((a, b) => a.number - b.number);
       }
@@ -713,6 +730,7 @@ function Streaming({ onShowAuth }) {
                 className="streaming-iframe"
                 allowFullScreen
                 scrolling="no"
+                allow="autoplay; fullscreen; picture-in-picture"
                 sandbox="allow-scripts allow-same-origin"
                 title={`${titleDisplay} - Episode ${currentEpisode} (Koto)`}
               />
@@ -733,6 +751,7 @@ function Streaming({ onShowAuth }) {
                   className="streaming-iframe"
                   allowFullScreen
                   scrolling="no"
+                  allow="autoplay; fullscreen; picture-in-picture"
                   sandbox="allow-scripts allow-same-origin"
                   title={`${titleDisplay} - Episode ${currentEpisode} (123Anime)`}
                 />
@@ -760,7 +779,7 @@ function Streaming({ onShowAuth }) {
                     className="streaming-iframe"
                     allowFullScreen
                     scrolling="no"
-                    sandbox="allow-scripts allow-same-origin"
+                    allow="autoplay; fullscreen; picture-in-picture"
                     title={`${titleDisplay} - Episode ${currentEpisode} (AllAnime)`}
                   />
                 ) : (
@@ -800,7 +819,7 @@ function Streaming({ onShowAuth }) {
                     className="streaming-iframe"
                     allowFullScreen
                     scrolling="no"
-                    sandbox="allow-scripts allow-same-origin"
+                    allow="autoplay; fullscreen; picture-in-picture"
                     title={`${titleDisplay} - Episode ${currentEpisode} (HAnime)`}
                   />
                 ) : (
@@ -839,7 +858,7 @@ function Streaming({ onShowAuth }) {
                   className="streaming-iframe"
                   allowFullScreen
                   scrolling="no"
-                  sandbox="allow-scripts allow-same-origin"
+                  allow="autoplay; fullscreen; picture-in-picture"
                   title={`${titleDisplay} - Episode ${currentEpisode} (Zone)`}
                 />
               ) : (
@@ -865,12 +884,12 @@ function Streaming({ onShowAuth }) {
                   className="streaming-iframe"
                   allowFullScreen
                   scrolling="no"
-                  sandbox="allow-scripts allow-same-origin"
+                  allow="autoplay; fullscreen; picture-in-picture"
                   title={`${titleDisplay} - Episode ${currentEpisode}`}
                 />
               ) : (
                 <HlsPlayer
-                  key={`pahe-${id}-${currentEpisode}`}
+                  key={`${activeServer}-${id}-${currentEpisode}`}
                   sources={streamSources}
                   title={`${titleDisplay} - Episode ${currentEpisode}`}
                   intro={introTimestamp}
@@ -1020,7 +1039,7 @@ function Streaming({ onShowAuth }) {
                 ))}
               </div>
             </>
-          ) : (activeServer === 'pahe' && searchError) ? (
+          ) : ((activeServer === 'pahe' || activeServer === 'miko') && searchError) ? (
             <div className="streaming-episodes-empty"><AlertCircle size={24} /><p>{searchError}</p></div>
           ) : (
             <div className="streaming-episodes-empty"><AlertCircle size={24} /><p>No episodes available.</p></div>
@@ -1070,6 +1089,23 @@ function Streaming({ onShowAuth }) {
               >
                 <div className="server-modal-details">
                   <span className="server-name">pahe</span>
+                  <div className="server-tags">
+                    <span className="server-tag">Hard-Sub</span>
+                    <span className="server-tag">EN Sub Only</span>
+                  </div>
+                </div>
+                <span className="server-status-dot" />
+              </button>
+              <button
+                type="button"
+                className={`server-modal-option ${activeServer === 'miko' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveServer('miko');
+                  setShowServerModal(false);
+                }}
+              >
+                <div className="server-modal-details">
+                  <span className="server-name">Miko</span>
                   <div className="server-tags">
                     <span className="server-tag">Hard-Sub</span>
                     <span className="server-tag">EN Sub Only</span>

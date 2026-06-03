@@ -123,7 +123,7 @@
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  background: rgba(20, 20, 20, 0.95);
+  background: rgba(var(--bg-card-rgb), 0.95);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--border-default);

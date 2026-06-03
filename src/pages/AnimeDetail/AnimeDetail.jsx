@@ -47,6 +47,7 @@ function AnimeDetail({ onShowAuth }) {
   const [bookmarkLoading, setBookmarkLoading] = useState(false);
   const [episodesPage, setEpisodesPage] = useState(0);
   const [showTrailer, setShowTrailer] = useState(false);
+  const [bookmarkedIds, setBookmarkedIds] = useState([]);
 
 
   useEffect(() => {
@@ -101,35 +102,39 @@ function AnimeDetail({ onShowAuth }) {
       let anikageEps = [];
 
       // 1. Search Anikage
-      for (const title of titles) {
-        if (cancelled) return;
-        try {
-          const results = await searchAnikage(title);
-          if (results && results.length > 0) {
-            let match = results[0];
-            const jikanEps = anime.episodes || 0;
-            
-            // Try exact title match
-            const exactMatch = results.find(r => {
-              const rTitle = (r.title?.english || r.title?.romaji || '').toLowerCase();
-              return rTitle === title.toLowerCase();
-            });
-            if (exactMatch) match = exactMatch;
-
-            // Prefer episode count matches
-            if (jikanEps > 0 && results.length > 1) {
-              const epMatch = results.find(r => {
-                const rEps = r.totalEpisodes || r.currentEpisode || 0;
-                return Math.abs(rEps - jikanEps) <= 2;
+      if (parseInt(id) === 5042) {
+        resolvedSlug = '8XzUtDNZYp';
+      } else {
+        for (const title of titles) {
+          if (cancelled) return;
+          try {
+            const results = await searchAnikage(title);
+            if (results && results.length > 0) {
+              let match = results[0];
+              const jikanEps = anime.episodes || 0;
+              
+              // Try exact title match
+              const exactMatch = results.find(r => {
+                const rTitle = (r.title?.english || r.title?.romaji || '').toLowerCase();
+                return rTitle === title.toLowerCase();
               });
-              if (epMatch) match = epMatch;
-            }
+              if (exactMatch) match = exactMatch;
 
-            resolvedSlug = match.slug;
-            break;
+              // Prefer episode count matches
+              if (jikanEps > 0 && results.length > 1) {
+                const epMatch = results.find(r => {
+                  const rEps = r.totalEpisodes || r.currentEpisode || 0;
+                  return Math.abs(rEps - jikanEps) <= 2;
+                });
+                if (epMatch) match = epMatch;
+              }
+
+              resolvedSlug = match.slug;
+              break;
+            }
+          } catch (err) {
+            console.error('Anikage search in details failed:', err);
           }
-        } catch (err) {
-          console.error('Anikage search in details failed:', err);
         }
       }
 
@@ -174,18 +179,25 @@ function AnimeDetail({ onShowAuth }) {
     async function checkBookmark() {
       if (!anime) return;
       if (isAuthenticated && user) {
-        const list = await getBookmarks(user.uid);
-        const item = list.find(b => b.mal_id === anime.mal_id);
-        if (item) {
-          setBookmarked(true);
-          setBookmarkCategory(item.category || 'Plan to Watch');
-        } else {
-          setBookmarked(false);
-          setBookmarkCategory('');
+        try {
+          const list = await getBookmarks(user.uid);
+          const ids = list.map(b => b.mal_id);
+          setBookmarkedIds(ids);
+          const item = list.find(b => b.mal_id === anime.mal_id);
+          if (item) {
+            setBookmarked(true);
+            setBookmarkCategory(item.category || 'Plan to Watch');
+          } else {
+            setBookmarked(false);
+            setBookmarkCategory('');
+          }
+        } catch (err) {
+          console.error('Failed to check bookmark:', err);
         }
       } else {
         setBookmarked(false);
         setBookmarkCategory('');
+        setBookmarkedIds([]);
       }
     }
     checkBookmark();
@@ -203,14 +215,44 @@ function AnimeDetail({ onShowAuth }) {
         await removeBookmark(user.uid, anime.mal_id);
         setBookmarked(false);
         setBookmarkCategory('');
+        setBookmarkedIds(prev => prev.filter(id => id !== anime.mal_id));
       } else {
         await addBookmark(user.uid, anime, 'Plan to Watch');
         setBookmarked(true);
         setBookmarkCategory('Plan to Watch');
+        setBookmarkedIds(prev => [...prev, anime.mal_id]);
       }
     } catch (err) { console.error('Bookmark action failed:', err); }
     finally { setBookmarkLoading(false); }
   }, [anime, bookmarked, bookmarkLoading, isAuthenticated, user, onShowAuth]);
+
+  const handleCardBookmark = useCallback(async (targetAnime) => {
+    if (!isAuthenticated) {
+      if (onShowAuth) onShowAuth();
+      return;
+    }
+    if (!targetAnime) return;
+    try {
+      const isCurrentlyBookmarked = bookmarkedIds.includes(targetAnime.mal_id);
+      if (isCurrentlyBookmarked) {
+        await removeBookmark(user.uid, targetAnime.mal_id);
+        setBookmarkedIds(prev => prev.filter(id => id !== targetAnime.mal_id));
+        if (targetAnime.mal_id === anime?.mal_id) {
+          setBookmarked(false);
+          setBookmarkCategory('');
+        }
+      } else {
+        await addBookmark(user.uid, targetAnime, 'Plan to Watch');
+        setBookmarkedIds(prev => [...prev, targetAnime.mal_id]);
+        if (targetAnime.mal_id === anime?.mal_id) {
+          setBookmarked(true);
+          setBookmarkCategory('Plan to Watch');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to toggle card bookmark:', err);
+    }
+  }, [anime, bookmarkedIds, isAuthenticated, user, onShowAuth]);
 
   const handleCategoryChange = async (newCategory) => {
     if (!isAuthenticated || !anime || bookmarkLoading) return;
@@ -228,6 +270,9 @@ function AnimeDetail({ onShowAuth }) {
   };
 
   const computedEpisodes = useMemo(() => {
+    if (anime?.status?.toLowerCase() === 'not yet aired') {
+      return [];
+    }
     if (episodes.length > 0) {
       return episodes;
     }
@@ -236,7 +281,7 @@ function AnimeDetail({ onShowAuth }) {
       return Array.from({ length: count }, (_, i) => ({ mal_id: i + 1, title: `Episode ${i + 1}` }));
     }
     return [];
-  }, [episodes, anime?.episodes]);
+  }, [episodes, anime?.episodes, anime?.status]);
 
   const EP_PAGE_SIZE = 100;
   const epTotalPages = Math.ceil(computedEpisodes.length / EP_PAGE_SIZE);
@@ -314,10 +359,16 @@ function AnimeDetail({ onShowAuth }) {
             </div>
             {synopsis.length > 300 && <button className="detail-synopsis-toggle" onClick={() => setSynopsisExpanded(!synopsisExpanded)}>{synopsisExpanded ? 'SHOW LESS' : 'READ FULL SYNOPSIS'}</button>}
             <div className="detail-actions">
-              <Link to={`/watch/${anime.mal_id}`} className="btn btn-primary"><Play size={16} /> Watch Episode 1</Link>
+              {anime.status?.toLowerCase() === 'not yet aired' ? (
+                <button className="btn btn-secondary" disabled style={{ cursor: 'not-allowed', opacity: 0.6 }}>
+                  Not Yet Aired
+                </button>
+              ) : (
+                <Link to={`/watch/${anime.mal_id}`} className="btn btn-primary"><Play size={16} /> Watch Episode 1</Link>
+              )}
               {getYouTubeId(anime.trailer) && (
                 <button onClick={() => setShowTrailer(true)} className="btn btn-secondary">
-                  <Play size={16} fill="currentColor" /> Preview
+                  <Play size={16} fill="currentColor" /> Trailer
                 </button>
               )}
               <div className="detail-bookmark-wrapper">
@@ -434,7 +485,13 @@ function AnimeDetail({ onShowAuth }) {
       {/* You May Also Like — using AnimeRow for arrows */}
       <section className="detail-recommendations container">
         {recAnimeList.length > 0 || recsLoading ? (
-          <AnimeRow title="You May Also Like" anime={recAnimeList} loading={recsLoading} />
+          <AnimeRow 
+            title="You May Also Like" 
+            anime={recAnimeList} 
+            loading={recsLoading} 
+            onBookmark={handleCardBookmark}
+            bookmarkedIds={bookmarkedIds}
+          />
         ) : (
           <>
             <h2 className="detail-section-title">You May Also Like</h2>

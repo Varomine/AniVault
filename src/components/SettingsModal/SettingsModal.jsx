@@ -24,6 +24,7 @@ export default function SettingsModal({ isOpen, onClose }) {
 
   const themes = [
     { id: 'luxury-gold', name: 'Luxury Gold', color: '#E4A85D', bg: '#0a0a0a' },
+    { id: 'amoled-black', name: 'AMOLED Black', color: '#e5e5e5', bg: '#000000' },
     { id: 'sapphire-blue', name: 'Sapphire Blue', color: '#3b82f6', bg: '#07090f' },
     { id: 'emerald-green', name: 'Emerald Green', color: '#10b981', bg: '#080d0b' },
     { id: 'amethyst-purple', name: 'Amethyst Purple', color: '#8b5cf6', bg: '#0c0910' },
@@ -53,7 +54,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                 className={`server-custom-dropdown-btn ${serverDropdownOpen ? 'active' : ''}`}
                 onClick={() => setServerDropdownOpen(prev => !prev)}
               >
-                <span>{defaultServer === 'pahe' ? 'Pahe' : defaultServer === 'koto' ? 'Koto' : defaultServer === '123' ? '123' : defaultServer === 'allanime' ? 'AllAnime' : defaultServer === 'hanime' ? 'HAnime' : 'Zone'}</span>
+                <span>{defaultServer === 'pahe' ? 'Pahe' : defaultServer === 'miko' ? 'Miko' : defaultServer === 'koto' ? 'Koto' : defaultServer === '123' ? '123' : defaultServer === 'allanime' ? 'AllAnime' : defaultServer === 'hanime' ? 'HAnime' : 'Zone'}</span>
                 <ChevronDown size={16} className={`server-custom-dropdown-chevron ${serverDropdownOpen ? 'rotated' : ''}`} />
               </button>
 
@@ -71,6 +72,20 @@ export default function SettingsModal({ isOpen, onClose }) {
                       {defaultServer === 'pahe' && <Check size={10} strokeWidth={3} />}
                     </span>
                     <span>Pahe <span className="server-dropdown-tag">Hard-Sub • EN Sub Only</span></span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`server-custom-dropdown-option ${defaultServer === 'miko' ? 'selected' : ''}`}
+                    onClick={() => {
+                      setDefaultServer('miko');
+                      setServerDropdownOpen(false);
+                    }}
+                  >
+                    <span className="server-option-check-box">
+                      {defaultServer === 'miko' && <Check size={10} strokeWidth={3} />}
+                    </span>
+                    <span>Miko <span className="server-dropdown-tag">Hard-Sub • EN Sub Only</span></span>
                   </button>
 
                   <button

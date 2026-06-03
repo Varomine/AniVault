@@ -28,7 +28,8 @@ export default function Torrent() {
     setLoading(true);
     setError(null);
     try {
-      const url = `https://anikage.cc/api/media/torrents/search?q=${encodeURIComponent(trimmed)}`;
+      const targetUrl = `https://anikage.cc/api/media/torrents/search?q=${encodeURIComponent(trimmed)}`;
+      const url = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`;
       const res = await fetch(url);
       
       if (!res.ok) {

@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
-import { Search, Menu, X, User, LogOut, Bookmark as BookmarkIcon, Settings as SettingsIcon } from 'lucide-react';
+import { Search, Menu, X, User, LogOut, Bookmark as BookmarkIcon, Settings as SettingsIcon, Shuffle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
-import { searchAnime } from '../../services/jikanApi';
+import { searchAnime, getRandomAnime } from '../../services/jikanApi';
 import SettingsModal from '../SettingsModal/SettingsModal';
 import './Navbar.css';
 
@@ -20,10 +20,27 @@ export default function Navbar({ onShowAuth }) {
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [surpriseLoading, setSurpriseLoading] = useState(false);
 
   const dropdownRef = useRef(null);
   const searchRef = useRef(null);
   const searchTimerRef = useRef(null);
+
+  const handleSurpriseMe = async () => {
+    if (surpriseLoading) return;
+    setSurpriseLoading(true);
+    setDropdownOpen(false);
+    try {
+      const res = await getRandomAnime();
+      if (res?.data?.mal_id) {
+        navigate(`/anime/${res.data.mal_id}`);
+      }
+    } catch (err) {
+      console.error('Failed to get a random anime:', err);
+    } finally {
+      setSurpriseLoading(false);
+    }
+  };
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -101,12 +118,12 @@ export default function Navbar({ onShowAuth }) {
   const closeMobile = () => setMobileOpen(false);
 
   const navItems = [
-    { label: 'Home', to: '/' },
+    { label: 'Home', to: '/home' },
     { label: 'Browse', to: '/browse' },
     { label: 'Schedule', to: '/schedule' },
     { label: 'Music', to: '/music' },
     { label: 'Torrent', to: '/torrent' },
-    { label: 'Bookmarks', to: '/bookmarks' },
+    { label: 'Random', to: '/random' },
   ];
 
   const getInitial = () => {
@@ -194,9 +211,10 @@ export default function Navbar({ onShowAuth }) {
                   <BookmarkIcon size={15} /><span>Bookmarks</span>
                 </button>
                 <div className="nav-dropdown-divider" />
-                <button className="nav-dropdown-item" onClick={() => { setSettingsOpen(true); setDropdownOpen(false); }}>
+                 <button className="nav-dropdown-item" onClick={() => { setSettingsOpen(true); setDropdownOpen(false); }}>
                   <SettingsIcon size={15} /><span>Settings</span>
                 </button>
+
                 <div className="nav-dropdown-divider" />
                 {isAuthenticated ? (
                   <button className="nav-dropdown-item danger" onClick={handleLogout}>

@@ -24,7 +24,7 @@
   gap: var(--space-xl);
   height: 100%;
   padding: 0 var(--space-xl);
-  background: rgba(13, 13, 13, 0.65);
+  background: rgba(var(--bg-secondary-rgb), 0.65);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-radius: var(--radius-full);
@@ -35,7 +35,7 @@
 }
 
 .header-container.scrolled .navbar-capsule {
-  background: rgba(10, 10, 10, 0.88);
+  background: rgba(var(--bg-primary-rgb), 0.88);
   border-color: rgba(228, 168, 93, 0.35);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 15px rgba(228, 168, 93, 0.05);
 }
@@ -293,7 +293,7 @@
   top: 76px;
   left: 12px;
   right: 12px;
-  background: rgba(13, 13, 13, 0.95);
+  background: rgba(var(--bg-secondary-rgb), 0.95);
   backdrop-filter: blur(30px);
   -webkit-backdrop-filter: blur(30px);
   border-radius: var(--radius-xl);
@@ -385,7 +385,7 @@
   top: calc(100% + 8px);
   right: 0;
   min-width: 360px;
-  background: rgba(18, 18, 18, 0.97);
+  background: rgba(var(--bg-card-rgb), 0.97);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--border-default);

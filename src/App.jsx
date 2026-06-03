@@ -5,6 +5,7 @@ import Footer from './components/Footer/Footer';
 import AuthModal from './components/AuthModal/AuthModal';
 
 // Lazy load pages for performance
+const Landing = lazy(() => import('./pages/Landing/Landing'));
 const Home = lazy(() => import('./pages/Home/Home'));
 const Browse = lazy(() => import('./pages/Browse/Browse'));
 const Schedule = lazy(() => import('./pages/Schedule/Schedule'));
@@ -13,6 +14,7 @@ const Torrent = lazy(() => import('./pages/Torrent/Torrent'));
 const Bookmark = lazy(() => import('./pages/Bookmark/Bookmark'));
 const AnimeDetail = lazy(() => import('./pages/AnimeDetail/AnimeDetail'));
 const Streaming = lazy(() => import('./pages/Streaming/Streaming'));
+const Random = lazy(() => import('./pages/Random/Random'));
 
 function PageLoader() {
   return (
@@ -32,11 +34,13 @@ function App() {
       <main>
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/" element={<Home onShowAuth={() => setShowAuthModal(true)} />} />
+            <Route path="/" element={<Landing />} />
+            <Route path="/home" element={<Home onShowAuth={() => setShowAuthModal(true)} />} />
             <Route path="/browse" element={<Browse onShowAuth={() => setShowAuthModal(true)} />} />
             <Route path="/schedule" element={<Schedule />} />
             <Route path="/music" element={<Music />} />
             <Route path="/torrent" element={<Torrent />} />
+            <Route path="/random" element={<Random />} />
             <Route
               path="/bookmarks"
               element={<Bookmark onShowAuth={() => setShowAuthModal(true)} />}

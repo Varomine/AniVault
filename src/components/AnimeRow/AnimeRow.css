@@ -109,7 +109,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 10, 10, 0.85);
+  background: rgba(var(--bg-card-rgb), 0.85);
   backdrop-filter: blur(8px);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);

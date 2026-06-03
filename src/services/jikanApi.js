@@ -36,13 +36,15 @@ async function processQueue() {
   isProcessing = true;
 
   while (requestQueue.length > 0) {
-    const { url, resolve, reject } = requestQueue.shift();
+    const { url, resolve, reject, bypassCache } = requestQueue.shift();
 
     // Check cache first
-    const cached = getFromCache(getCacheKey(url));
-    if (cached) {
-      resolve(cached);
-      continue;
+    if (!bypassCache) {
+      const cached = getFromCache(getCacheKey(url));
+      if (cached) {
+        resolve(cached);
+        continue;
+      }
     }
 
     try {
@@ -50,7 +52,7 @@ async function processQueue() {
 
       if (response.status === 429) {
         // Rate limited - wait and retry
-        requestQueue.unshift({ url, resolve, reject });
+        requestQueue.unshift({ url, resolve, reject, bypassCache });
         await new Promise(r => setTimeout(r, 2000));
         continue;
       }
@@ -60,7 +62,9 @@ async function processQueue() {
       }
 
       const data = await response.json();
-      setCache(getCacheKey(url), data);
+      if (!bypassCache) {
+        setCache(getCacheKey(url), data);
+      }
       resolve(data);
     } catch (error) {
       reject(error);
@@ -73,16 +77,19 @@ async function processQueue() {
   isProcessing = false;
 }
 
-function enqueueRequest(url) {
+function enqueueRequest(url, options = {}) {
+  const { bypassCache = false } = options;
   return new Promise((resolve, reject) => {
     // Check cache immediately
-    const cached = getFromCache(getCacheKey(url));
-    if (cached) {
-      resolve(cached);
-      return;
+    if (!bypassCache) {
+      const cached = getFromCache(getCacheKey(url));
+      if (cached) {
+        resolve(cached);
+        return;
+      }
     }
 
-    requestQueue.push({ url, resolve, reject });
+    requestQueue.push({ url, resolve, reject, bypassCache });
     processQueue();
   });
 }
@@ -177,6 +184,11 @@ export async function getSeasonsList() {
 export async function getBannerAnime() {
   const url = buildUrl('/top/anime', { filter: 'bypopularity', limit: 8, type: 'tv' });
   return enqueueRequest(url);
+}
+
+export async function getRandomAnime() {
+  const url = buildUrl('/random/anime');
+  return enqueueRequest(url, { bypassCache: true });
 }
 
 export function getStatusText(status) {

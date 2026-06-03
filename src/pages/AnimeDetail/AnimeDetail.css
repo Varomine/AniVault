@@ -32,9 +32,9 @@
   background: linear-gradient(
     to top,
     var(--bg-primary) 0%,
-    rgba(10, 10, 10, 0.95) 15%,
-    rgba(10, 10, 10, 0.6) 50%,
-    rgba(10, 10, 10, 0.4) 100%
+    rgba(var(--bg-primary-rgb), 0.95) 15%,
+    rgba(var(--bg-primary-rgb), 0.6) 50%,
+    rgba(var(--bg-primary-rgb), 0.4) 100%
   );
   z-index: 1;
 }
@@ -131,15 +131,19 @@
   gap: var(--space-sm);
 }
 
-.detail-synopsis.clamped {
+.detail-synopsis {
   max-height: 4.8em;
   overflow: hidden;
   position: relative;
+  transition: max-height 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.detail-synopsis.clamped {
+  max-height: 4.8em;
 }
 
 .detail-synopsis.expanded {
-  max-height: none;
-  overflow: visible;
+  max-height: 800px;
 }
 
 .detail-synopsis p {
@@ -148,7 +152,7 @@
   line-height: 1.7;
 }
 
-.detail-synopsis.clamped::after {
+.detail-synopsis::after {
   content: '';
   position: absolute;
   bottom: 0;
@@ -157,6 +161,12 @@
   height: 40px;
   background: linear-gradient(to top, var(--bg-primary), transparent);
   pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.detail-synopsis.clamped::after {
+  opacity: 1;
 }
 
 .detail-synopsis-toggle {
