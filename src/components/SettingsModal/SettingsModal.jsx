@@ -53,7 +53,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                 className={`server-custom-dropdown-btn ${serverDropdownOpen ? 'active' : ''}`}
                 onClick={() => setServerDropdownOpen(prev => !prev)}
               >
-                <span>{defaultServer === 'pahe' ? 'Pahe' : defaultServer === 'koto' ? 'Koto' : defaultServer === '123' ? '123' : defaultServer === 'allanime' ? 'AllAnime' : 'HAnime'}</span>
+                <span>{defaultServer === 'pahe' ? 'Pahe' : defaultServer === 'koto' ? 'Koto' : defaultServer === '123' ? '123' : defaultServer === 'allanime' ? 'AllAnime' : defaultServer === 'hanime' ? 'HAnime' : 'Zone'}</span>
                 <ChevronDown size={16} className={`server-custom-dropdown-chevron ${serverDropdownOpen ? 'rotated' : ''}`} />
               </button>
 
@@ -127,6 +127,20 @@ export default function SettingsModal({ isOpen, onClose }) {
                       {defaultServer === 'hanime' && <Check size={10} strokeWidth={3} />}
                     </span>
                     <span>HAnime <span className="server-dropdown-tag hentai">Hard-Sub • 18+ Only </span></span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`server-custom-dropdown-option ${defaultServer === 'zone' ? 'selected' : ''}`}
+                    onClick={() => {
+                      setDefaultServer('zone');
+                      setServerDropdownOpen(false);
+                    }}
+                  >
+                    <span className="server-option-check-box">
+                      {defaultServer === 'zone' && <Check size={10} strokeWidth={3} />}
+                    </span>
+                    <span>Zone <span className="server-dropdown-tag best">Soft-Sub • ASS Subtitles</span></span>
                   </button>
                 </div>
               )}

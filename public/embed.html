@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Player</title>
+  <title>Anivault Premium Stream Player</title>
   <style>
     html, body {
       margin: 0;
@@ -16,99 +16,350 @@
       align-items: center;
       justify-content: center;
     }
-    video {
+    .artplayer-app {
       width: 100%;
       height: 100%;
-      object-fit: contain;
+    }
+    .art-video {
+      background-color: #000 !important;
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/artplayer@5.1.1/dist/artplayer.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/artplayer-plugin-jassub/dist/artplayer-plugin-jassub.js"></script>
 </head>
 <body>
-  <video id="video" controls playsinline></video>
+  <div class="artplayer-app"></div>
 
   <script>
     const urlParams = new URLSearchParams(window.location.search);
-    const streamUrl = urlParams.get('url');
-    const posterUrl = urlParams.get('poster');
+    const singleUrl = urlParams.get('url');
+    const sourcesParam = urlParams.get('sources');
+    const subtitlesParam = urlParams.get('subtitles');
+    const posterUrl = urlParams.get('poster') || '';
     const initialTime = parseFloat(urlParams.get('t') || '0');
 
-    const video = document.getElementById('video');
+    let videoUrl = '';
+    let qualityList = [];
 
-    if (posterUrl) {
-      video.poster = posterUrl;
+    // Helper to determine if a URL is HLS
+    function checkIsHls(url) {
+      if (!url) return false;
+      const lower = url.toLowerCase();
+      return lower.includes('.m3u8') || 
+             lower.includes('index.txt') || 
+             lower.includes('/stream/') || 
+             lower.includes('koyeb.app/proxy');
     }
 
-    if (streamUrl) {
-      const isM3u8 = streamUrl.toLowerCase().includes('.m3u8') || streamUrl.toLowerCase().includes('index.txt') || streamUrl.toLowerCase().includes('/stream/');
+    // Helper to load cross-origin worker via Blob URL
+    function createWorkerBlob(url) {
+      const blob = new Blob([`importScripts("${url}");`], { type: 'text/javascript' });
+      return URL.createObjectURL(blob);
+    }
 
-      if (!isM3u8) {
-        // Direct mp4/webm/etc playback natively
-        video.src = streamUrl;
-        if (initialTime > 0) {
-          const handleCanPlay = () => {
-            video.currentTime = initialTime;
-            video.removeEventListener('canplay', handleCanPlay);
-          };
-          video.addEventListener('canplay', handleCanPlay);
+    if (sourcesParam) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(sourcesParam));
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Sort qualities descending: 1080p > 720p > 480p > 360p
+          const priority = ['1080p', '720p', '480p', '360p'];
+          parsed.sort((a, b) => {
+            const indexA = priority.indexOf(a.quality);
+            const indexB = priority.indexOf(b.quality);
+            if (indexA === -1 && indexB === -1) return 0;
+            if (indexA === -1) return 1;
+            if (indexB === -1) return -1;
+            return indexA - indexB;
+          });
+
+          qualityList = parsed.map((item, idx) => {
+            let itemUrl = item.streamUrl || item.url;
+            if (checkIsHls(itemUrl) && !itemUrl.includes('#')) {
+              itemUrl += '#file.m3u8';
+            }
+            return {
+              html: item.quality,
+              url: itemUrl,
+              default: idx === 0,
+            };
+          });
+
+          videoUrl = qualityList[0].url;
         }
+      } catch (e) {
+        console.error('Failed to parse sources JSON:', e);
       }
-      // Check for native HLS support (Safari/iOS)
-      else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = streamUrl;
-        if (initialTime > 0) {
-          const handleCanPlay = () => {
-            video.currentTime = initialTime;
-            video.removeEventListener('canplay', handleCanPlay);
-          };
-          video.addEventListener('canplay', handleCanPlay);
+    }
+
+    if (!videoUrl && singleUrl) {
+      videoUrl = singleUrl;
+      if (checkIsHls(videoUrl) && !videoUrl.includes('#')) {
+        videoUrl += '#file.m3u8';
+      }
+    }
+
+    // Helper to proxy cross-origin subtitles to bypass CORS
+    function getProxiedSubtitleUrl(url) {
+      if (!url) return '';
+      try {
+        const urlObj = new URL(url, window.location.href);
+        if (urlObj.origin !== window.location.origin) {
+          return `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`;
         }
-      } 
-      // Fallback to hls.js for browsers that don't support m3u8 natively (Chrome, Firefox, etc.)
-      else if (Hls.isSupported()) {
-        const hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: false,
-          maxBufferLength: 30,
-          enableSoftwareAES: true,
-        });
-        hls.loadSource(streamUrl);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (initialTime > 0) {
-            video.currentTime = initialTime;
-          }
-        });
-        
-        // Handle stream recovery
-        hls.on(Hls.Events.ERROR, function (event, data) {
-          if (data.fatal) {
-            switch (data.type) {
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                console.log('fatal media error encountered, try to recover');
-                hls.recoverMediaError();
-                break;
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                console.error('fatal network error encountered', data);
-                break;
-              default:
-                hls.destroy();
-                break;
+      } catch (e) {
+        console.error('Failed to parse subtitle URL for proxy:', e);
+      }
+      return url;
+    }
+
+    // Subtitles parsing
+    let subtitleList = [];
+    if (subtitlesParam) {
+      try {
+        const parsedSubs = JSON.parse(decodeURIComponent(subtitlesParam));
+        if (Array.isArray(parsedSubs) && parsedSubs.length > 0) {
+          subtitleList = parsedSubs.map((sub, idx) => {
+            return {
+              html: sub.label || sub.name || `Track ${idx + 1}`,
+              url: sub.url,
+              default: idx === 0, // default to first one
+            };
+          });
+        }
+      } catch (e) {
+        console.error('Failed to parse subtitles:', e);
+      }
+    }
+
+    if (videoUrl) {
+      const isHls = checkIsHls(videoUrl);
+      const defaultSub = subtitleList.find(sub => sub.default) || subtitleList[0];
+      const initialSubUrl = defaultSub ? defaultSub.url : '';
+      const cleanSubUrlPath = initialSubUrl.split('?')[0].split('#')[0].toLowerCase();
+      const isInitialAss = cleanSubUrlPath.endsWith('.ass');
+      const finalInitialSubUrl = isInitialAss || cleanSubUrlPath.endsWith('.srt') || cleanSubUrlPath.endsWith('.vtt')
+        ? getProxiedSubtitleUrl(initialSubUrl)
+        : initialSubUrl;
+
+      const artConfig = {
+        container: '.artplayer-app',
+        url: videoUrl,
+        type: isHls ? 'm3u8' : '',
+        poster: posterUrl,
+        volume: 0.8,
+        isLive: false,
+        muted: false,
+        autoplay: true,
+        pip: true,
+        autoSize: true,
+        autoMini: false,
+        screenshot: false,
+        setting: true,
+        loop: false,
+        flip: false,
+        playbackRate: true,
+        aspectRatio: true,
+        fullscreen: true,
+        fullscreenWeb: false,
+        miniProgressBar: true,
+        mutex: true,
+        backdrop: true,
+        playsInline: true,
+        autoPlayback: true,
+        theme: '#E4A85D', // Luxury Gold theme!
+        quality: qualityList,
+        customType: {
+          m3u8: function (video, url, artplayer) {
+            if (Hls.isSupported()) {
+              if (artplayer.hls) {
+                artplayer.hls.destroy();
+              }
+              const hls = new Hls({
+                enableWorker: true,
+                lowLatencyMode: false,
+                maxBufferLength: 30,
+                enableSoftwareAES: true,
+              });
+              hls.loadSource(url);
+              hls.attachMedia(video);
+              artplayer.hls = hls;
+
+              if (qualityList.length === 0) {
+                hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                  const levels = hls.levels;
+                  if (levels && levels.length > 1) {
+                    const mappedQualities = levels.map((level, index) => ({
+                      html: level.height + 'P',
+                      index: index,
+                    }));
+                    mappedQualities.unshift({ html: 'Auto', index: -1 });
+
+                    artplayer.setting.update({
+                      name: 'quality',
+                      html: 'Quality',
+                      width: 150,
+                      selector: mappedQualities,
+                      onSelect: function (item) {
+                        hls.currentLevel = item.index;
+                        return item.html;
+                      },
+                    });
+                  }
+                });
+              }
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+              video.src = url;
+            } else {
+              artplayer.notice.show = 'HLS is not supported in this browser';
             }
           }
-        });
-      } else {
-        alert('Your browser does not support HLS playback.');
+        }
+      };
+
+      // Native subtitle settings (only for non-ASS files)
+      if (initialSubUrl && !isInitialAss) {
+        artConfig.subtitle = {
+          url: finalInitialSubUrl,
+          type: initialSubUrl.split('?')[0].split('#')[0].toLowerCase().endsWith('.srt') ? 'srt' : 'vtt',
+          style: {
+            color: '#fff',
+            fontSize: '22px',
+          }
+        };
       }
 
-      // Propagate timeupdate to parent window if desired (for watch history)
-      video.addEventListener('timeupdate', () => {
+      // Add custom settings menu for subtitles if we have subtitles
+      if (subtitleList.length > 0) {
+        const selectorOptions = subtitleList.map((sub, idx) => ({
+          html: sub.html,
+          url: sub.url,
+          index: idx,
+          default: sub.default,
+        }));
+        selectorOptions.push({
+          html: 'Off',
+          url: '',
+          index: -1,
+          default: !defaultSub,
+        });
+
+        artConfig.settings = [
+          {
+            name: 'subtitle-select',
+            html: 'Subtitle',
+            width: 200,
+            selector: selectorOptions,
+            onSelect: function (item) {
+              const url = item.url;
+              const cleanPath = url.split('?')[0].split('#')[0].toLowerCase();
+              const isItemAss = cleanPath.endsWith('.ass');
+              const proxiedUrl = isItemAss || cleanPath.endsWith('.srt') || cleanPath.endsWith('.vtt')
+                ? getProxiedSubtitleUrl(url)
+                : url;
+
+              if (art.jassub) {
+                art.jassub.destroy();
+                art.jassub = null;
+              }
+
+              if (isItemAss) {
+                art.subtitle.show = false;
+                if (typeof artplayerPluginJassub !== 'undefined') {
+                  const pluginInitializer = artplayerPluginJassub({
+                    subUrl: proxiedUrl,
+                    workerUrl: createWorkerBlob('https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker.js'),
+                    wasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker.wasm',
+                    modernWasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker-modern.wasm',
+                    legacyWasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker.wasm.js',
+                    availableFonts: { 'liberation sans': 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/default.woff2' },
+                  });
+                  const pluginResult = pluginInitializer(art);
+                  art.jassub = pluginResult.instance;
+                }
+              } else if (url) {
+                art.subtitle.url = proxiedUrl;
+                art.subtitle.show = true;
+              } else {
+                art.subtitle.show = false;
+              }
+              return item.html;
+            }
+          }
+        ];
+      }
+
+      const art = new Artplayer(artConfig);
+
+      // Handle custom type for direct video files if we switch quality
+      art.on('change:quality', (item) => {
+        const nextUrl = item.url;
+        const isNextHls = checkIsHls(nextUrl);
+        
+        if (isNextHls && Hls.isSupported()) {
+          art.video.pause();
+          if (art.hls) {
+            art.hls.destroy();
+            art.hls = null;
+          }
+          const hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: false,
+            maxBufferLength: 30,
+            enableSoftwareAES: true,
+          });
+          hls.loadSource(nextUrl);
+          hls.attachMedia(art.video);
+          art.hls = hls;
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            art.video.play().catch(() => {});
+          });
+        }
+      });
+
+      // Load initial ASS subtitle if applicable on player ready
+      art.on('ready', () => {
+        if (isInitialAss && typeof artplayerPluginJassub !== 'undefined') {
+          const pluginInitializer = artplayerPluginJassub({
+            subUrl: finalInitialSubUrl,
+            workerUrl: createWorkerBlob('https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker.js'),
+            wasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker.wasm',
+            modernWasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker-modern.wasm',
+            legacyWasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/jassub-worker.wasm.js',
+            availableFonts: { 'liberation sans': 'https://cdn.jsdelivr.net/npm/jassub@1.8.8/dist/default.woff2' },
+          });
+          const pluginResult = pluginInitializer(art);
+          art.jassub = pluginResult.instance;
+        }
+      });
+
+      // Handle initial seek time
+      art.on('video:loadedmetadata', () => {
+        if (initialTime > 0) {
+          art.video.currentTime = initialTime;
+        }
+      });
+
+      // Propagate timeupdate to parent window for watch progress tracking
+      art.on('video:timeupdate', () => {
         if (window.parent) {
           window.parent.postMessage({
             type: 'PLAYER_TIMEUPDATE',
-            currentTime: video.currentTime,
-            duration: video.duration
+            currentTime: art.video.currentTime,
+            duration: art.video.duration
           }, '*');
+        }
+      });
+
+      // Clean up instances on destroy
+      art.on('destroy', () => {
+        if (art.hls) {
+          art.hls.destroy();
+          art.hls = null;
+        }
+        if (art.jassub) {
+          art.jassub.destroy();
+          art.jassub = null;
         }
       });
     }

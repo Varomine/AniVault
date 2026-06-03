@@ -10,7 +10,27 @@ import {
   Bookmark,
   Eye as EyeIcon,
   Loader2,
+  X,
 } from 'lucide-react';
+
+function getYouTubeId(trailerOrUrl) {
+  if (!trailerOrUrl) return '';
+  if (typeof trailerOrUrl === 'object') {
+    if (trailerOrUrl.youtube_id) return trailerOrUrl.youtube_id;
+    const urls = [trailerOrUrl.url, trailerOrUrl.embed_url].filter(Boolean);
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    for (const url of urls) {
+      const match = url.match(regExp);
+      if (match && match[2].length === 11) {
+        return match[2];
+      }
+    }
+    return '';
+  }
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = trailerOrUrl.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : '';
+}
 import {
   getBannerAnime,
   getTrendingAnime,
@@ -36,6 +56,7 @@ function Home({ onShowAuth }) {
   const [bannerLoading, setBannerLoading] = useState(true);
   const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [showTrailer, setShowTrailer] = useState(false);
 
   // Section data state
   const [trending, setTrending] = useState([]);
@@ -438,16 +459,14 @@ function Home({ onShowAuth }) {
                   Watch Episode 1
                 </button>
 
-                {trailer?.url && (
-                  <a
-                    href={trailer.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                {getYouTubeId(anime?.trailer) && (
+                  <button
                     className="btn btn-secondary hero-btn"
+                    onClick={() => setShowTrailer(true)}
                   >
                     <EyeIcon size={18} />
                     Watch Trailer
-                  </a>
+                  </button>
                 )}
 
                 <button
@@ -563,6 +582,26 @@ function Home({ onShowAuth }) {
           bookmarkedIds={userBookmarks}
         />
       </div>
+      {showTrailer && getYouTubeId(anime?.trailer) && (
+        <div className="modal-overlay" onClick={() => setShowTrailer(false)}>
+          <div className="modal-content trailer-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="trailer-modal-header">
+              <h3 className="trailer-modal-title">{mainTitle} - Official Trailer</h3>
+              <button className="trailer-modal-close" onClick={() => setShowTrailer(false)} aria-label="Close trailer">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="trailer-video-container">
+              <iframe
+                src={`https://www.youtube.com/embed/${getYouTubeId(anime.trailer)}?autoplay=1`}
+                title={`${mainTitle} Trailer`}
+                allowFullScreen
+                allow="autoplay; encrypted-media"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

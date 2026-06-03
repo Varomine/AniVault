@@ -5,6 +5,7 @@ import { searchAnikage, getAnikageEpisodes, getAnikageStreams, getBestSource } f
 import { search123Anime, get123AnimeStream } from '../../services/123animeApi';
 import { searchAllAnime, getAllAnimeStream } from '../../services/allanimeApi';
 import { getHAnimeStreams } from '../../services/hanimeApi';
+import { searchAniZone, getAniZoneEpisodes, getAniZoneStream } from '../../services/anizoneApi';
 import { getAnimeById, getAnimeRecommendations, getStatusText, getStatusClass } from '../../services/jikanApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -62,6 +63,13 @@ function Streaming({ onShowAuth }) {
   const [allAnimeId, setAllAnimeId] = useState(null);
   const [allAnimeLoading, setAllAnimeLoading] = useState(false);
   const [allAnimeError, setAllAnimeError] = useState(null);
+
+  const [aniZoneId, setAniZoneId] = useState(null);
+  const [aniZoneLoading, setAniZoneLoading] = useState(false);
+  const [aniZoneError, setAniZoneError] = useState(null);
+  const [aniZoneSubtitles, setAniZoneSubtitles] = useState([]);
+  const [aniZoneEpisodes, setAniZoneEpisodes] = useState([]);
+  const [aniZoneEpisodesLoading, setAniZoneEpisodesLoading] = useState(false);
 
   const [bookmarked, setBookmarked] = useState(false);
   const [bookmarkCategory, setBookmarkCategory] = useState('');
@@ -215,6 +223,52 @@ function Streaming({ onShowAuth }) {
     }
   }
 
+  // Search AniZone for matching anime
+  async function searchAniZoneForAnime(animeData, cancelled) {
+    setAniZoneLoading(true);
+    setAniZoneError(null);
+
+    const titles = [...new Set([
+      animeData.title_english,
+      animeData.title,
+      animeData.title_japanese
+    ].filter(Boolean))];
+
+    for (const title of titles) {
+      if (cancelled) return;
+      try {
+        const match = await searchAniZone(title);
+        if (match && match.id) {
+          setAniZoneId(match.id);
+          setAniZoneLoading(false);
+          fetchAniZoneEpisodesList(match.id, cancelled);
+          return;
+        }
+      } catch (err) {
+        console.error(`AniZone search failed for "${title}":`, err);
+      }
+    }
+
+    if (!cancelled) {
+      setAniZoneError('Anime not found on AniZone.');
+      setAniZoneLoading(false);
+    }
+  }
+
+  // Fetch episodes for AniZone
+  async function fetchAniZoneEpisodesList(aniZoneId, cancelled) {
+    setAniZoneEpisodesLoading(true);
+    try {
+      const data = await getAniZoneEpisodes(aniZoneId);
+      if (cancelled) return;
+      setAniZoneEpisodes(data.episodes || []);
+    } catch (err) {
+      console.error('AniZone episodes fetch failed:', err);
+    } finally {
+      if (!cancelled) setAniZoneEpisodesLoading(false);
+    }
+  }
+
   // ---- Step 1+2: Fetch Jikan + search Anikage IN PARALLEL ----
   useEffect(() => {
     let cancelled = false;
@@ -234,6 +288,10 @@ function Streaming({ onShowAuth }) {
       setOneTwoThreeError(null);
       setAllAnimeId(null);
       setAllAnimeError(null);
+      setAniZoneId(null);
+      setAniZoneError(null);
+      setAniZoneSubtitles([]);
+      setAniZoneEpisodes([]);
     });
     resolvedForId.current = null;
 
@@ -265,6 +323,9 @@ function Streaming({ onShowAuth }) {
 
         // Search AllAnime
         searchAllAnimeForAnime(data.data, cancelled);
+
+        // Search AniZone
+        searchAniZoneForAnime(data.data, cancelled);
       } catch (err) {
         if (!cancelled) { console.error('Jikan error:', err); setAnimeLoading(false); }
       }
@@ -376,7 +437,7 @@ function Streaming({ onShowAuth }) {
           const data = await getHAnimeStreams(anime, currentEpisode);
           if (cancelled) return;
           if (!data || !data.streams || data.streams.length === 0) {
-            setSourceError('No streaming source for this episode on HAnime.');
+            setSourceError('No streaming source available for this episode on HAnime.');
             return;
           }
           setStreamSources(data.streams);
@@ -385,12 +446,35 @@ function Streaming({ onShowAuth }) {
         } finally {
           if (!cancelled) setSourceLoading(false);
         }
+      } else if (activeServer === 'zone') {
+        if (!aniZoneId) return;
+        setSourceLoading(true);
+        setSourceError(null);
+        setStreamSources([]);
+        setAniZoneSubtitles([]);
+
+        try {
+          const epMatch = aniZoneEpisodes.find(ep => ep.number === currentEpisode);
+          const epId = epMatch ? epMatch.id : null;
+          const data = await getAniZoneStream(aniZoneId, currentEpisode, epId);
+          if (cancelled) return;
+          if (!data || !data.streams || data.streams.length === 0) {
+            setSourceError('No streaming source for this episode on Zone.');
+            return;
+          }
+          setStreamSources(data.streams);
+          setAniZoneSubtitles(data.subtitles || []);
+        } catch (err) {
+          if (!cancelled) { console.error('Zone stream fetch error:', err); setSourceError('Failed to load stream.'); }
+        } finally {
+          if (!cancelled) setSourceLoading(false);
+        }
       }
     };
 
     fetchStream();
     return () => { cancelled = true; };
-  }, [activeServer, anikageSlug, oneTwoThreeId, allAnimeId, currentEpisode, anime]);
+  }, [activeServer, anikageSlug, oneTwoThreeId, allAnimeId, aniZoneId, aniZoneEpisodes, currentEpisode, anime]);
 
   // ---- Related anime (delayed to not block) ----
   useEffect(() => {
@@ -525,6 +609,18 @@ function Streaming({ onShowAuth }) {
         return Array.from({ length: Math.min(count, 1500) }, (_, i) => ({ number: i + 1, title: `Episode ${i + 1}` }));
       }
       return [];
+    } else if (activeServer === 'zone') {
+      if (aniZoneEpisodes.length > 0) {
+        return aniZoneEpisodes.map(ep => ({
+          number: ep.number,
+          title: ep.title,
+          img: ep.img
+        })).sort((a, b) => a.number - b.number);
+      }
+      if (count > 0) {
+        return Array.from({ length: Math.min(count, 1500) }, (_, i) => ({ number: i + 1, title: `Episode ${i + 1}` }));
+      }
+      return [];
     } else {
       // For Koto: we always show up to the currently aired count
       return Array.from({ length: Math.max(count, currentEpisode) }, (_, i) => {
@@ -536,11 +632,15 @@ function Streaming({ onShowAuth }) {
         };
       });
     }
-  }, [anikageEpisodes, totalEpisodeCount, anime, activeServer, currentEpisode]);
+  }, [anikageEpisodes, aniZoneEpisodes, totalEpisodeCount, anime, activeServer, currentEpisode]);
 
   const maxEpisode = episodeList.length > 0 ? Math.max(...episodeList.map(ep => ep.number)) : 0;
 
   const currentEpInfo = useMemo(() => {
+    if (activeServer === 'zone') {
+      const existing = aniZoneEpisodes.find(ep => ep.number === currentEpisode);
+      if (existing) return existing;
+    }
     const existing = anikageEpisodes.find(ep => ep.number === currentEpisode);
     if (existing) return existing;
     return {
@@ -549,7 +649,7 @@ function Streaming({ onShowAuth }) {
       img: anime?.images?.jpg?.large_image_url || null,
       description: ''
     };
-  }, [anikageEpisodes, currentEpisode, anime]);
+  }, [anikageEpisodes, aniZoneEpisodes, activeServer, currentEpisode, anime]);
 
   // ---- Episode Pagination calculations ----
   const PAGE_SIZE = 100;
@@ -569,7 +669,7 @@ function Streaming({ onShowAuth }) {
 
   // ---- Update watch history when anime and episode are playing ----
   useEffect(() => {
-    if (anime && (streamSources.length > 0 || activeServer === 'koto' || (activeServer === '123' && oneTwoThreeEmbedUrl))) {
+    if (anime && (streamSources.length > 0 || activeServer === 'koto' || activeServer === 'zone' || (activeServer === '123' && oneTwoThreeEmbedUrl))) {
       updateWatchHistory(anime, currentEpisode, currentEpInfo?.img);
     }
   }, [anime, currentEpisode, streamSources, currentEpInfo, activeServer, oneTwoThreeEmbedUrl]);
@@ -656,7 +756,7 @@ function Streaming({ onShowAuth }) {
               ) : streamSources.length > 0 ? (
                 IS_IOS && bestSource ? (
                   <iframe
-                    src={`/embed.html?url=${encodeURIComponent(bestSource.streamUrl)}&poster=${encodeURIComponent(anime?.images?.jpg?.large_image_url || '')}&t=${initialProgress}`}
+                    src={`/embed.html?sources=${encodeURIComponent(JSON.stringify(streamSources))}&poster=${encodeURIComponent(anime?.images?.jpg?.large_image_url || '')}&t=${initialProgress}`}
                     className="streaming-iframe"
                     allowFullScreen
                     scrolling="no"
@@ -696,7 +796,7 @@ function Streaming({ onShowAuth }) {
               ) : streamSources.length > 0 ? (
                 IS_IOS && bestSource ? (
                   <iframe
-                    src={`/embed.html?url=${encodeURIComponent(bestSource.streamUrl)}&poster=${encodeURIComponent(anime?.images?.jpg?.large_image_url || '')}&t=${initialProgress}`}
+                    src={`/embed.html?sources=${encodeURIComponent(JSON.stringify(streamSources))}&poster=${encodeURIComponent(anime?.images?.jpg?.large_image_url || '')}&t=${initialProgress}`}
                     className="streaming-iframe"
                     allowFullScreen
                     scrolling="no"
@@ -722,6 +822,32 @@ function Streaming({ onShowAuth }) {
                   <span>No streaming source available for HAnime.</span>
                 </div>
               )
+            ) : activeServer === 'zone' ? (
+              sourceLoading || initialProgress === null ? (
+                <div className="streaming-player-loading">
+                  <div className="spinner" />
+                  <span>{`Loading ep ${currentEpisode} on Zone...`}</span>
+                </div>
+              ) : sourceError ? (
+                <div className="streaming-player-error">
+                  <AlertCircle size={40} />
+                  <span>{sourceError}</span>
+                </div>
+              ) : streamSources.length > 0 ? (
+                <iframe
+                  src={`/embed.html?sources=${encodeURIComponent(JSON.stringify(streamSources))}&subtitles=${encodeURIComponent(JSON.stringify(aniZoneSubtitles))}&poster=${encodeURIComponent(anime?.images?.jpg?.large_image_url || '')}&t=${initialProgress}`}
+                  className="streaming-iframe"
+                  allowFullScreen
+                  scrolling="no"
+                  sandbox="allow-scripts allow-same-origin"
+                  title={`${titleDisplay} - Episode ${currentEpisode} (Zone)`}
+                />
+              ) : (
+                <div className="streaming-player-error">
+                  <AlertCircle size={40} />
+                  <span>No streaming source available for Zone.</span>
+                </div>
+              )
             ) : sourceLoading || searchLoading || initialProgress === null ? (
               <div className="streaming-player-loading">
                 <div className="spinner" />
@@ -735,7 +861,7 @@ function Streaming({ onShowAuth }) {
             ) : streamSources.length > 0 ? (
               IS_IOS && bestSource ? (
                 <iframe
-                  src={`/embed.html?url=${encodeURIComponent(bestSource.streamUrl)}&poster=${encodeURIComponent(anime?.images?.jpg?.large_image_url || '')}&t=${initialProgress}`}
+                  src={`/embed.html?sources=${encodeURIComponent(JSON.stringify(streamSources))}&poster=${encodeURIComponent(anime?.images?.jpg?.large_image_url || '')}&t=${initialProgress}`}
                   className="streaming-iframe"
                   allowFullScreen
                   scrolling="no"
@@ -1015,6 +1141,23 @@ function Streaming({ onShowAuth }) {
                   <div className="server-tags">
                     <span className="server-tag hentai">Hard-Sub</span>
                     <span className="server-tag hentai">18+ Only</span>
+                  </div>
+                </div>
+                <span className="server-status-dot" />
+              </button>
+              <button
+                type="button"
+                className={`server-modal-option ${activeServer === 'zone' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveServer('zone');
+                  setShowServerModal(false);
+                }}
+              >
+                <div className="server-modal-details">
+                  <span className="server-name">Zone</span>
+                  <div className="server-tags">
+                    <span className="server-tag">Soft-Sub</span>
+                    <span className="server-tag best">ASS Subtitles</span>
                   </div>
                 </div>
                 <span className="server-status-dot" />

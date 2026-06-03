@@ -1,7 +1,26 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Star, Play, Bookmark, Clock, Calendar, Tv, Loader2 } from 'lucide-react';
+import { Star, Play, Bookmark, Clock, Calendar, Tv, Loader2, X } from 'lucide-react';
 import { getAnimeById, getAnimeCharacters, getAnimeRecommendations, getAnimeEpisodes, getStatusText, getStatusClass } from '../../services/jikanApi';
+
+function getYouTubeId(trailerOrUrl) {
+  if (!trailerOrUrl) return '';
+  if (typeof trailerOrUrl === 'object') {
+    if (trailerOrUrl.youtube_id) return trailerOrUrl.youtube_id;
+    const urls = [trailerOrUrl.url, trailerOrUrl.embed_url].filter(Boolean);
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    for (const url of urls) {
+      const match = url.match(regExp);
+      if (match && match[2].length === 11) {
+        return match[2];
+      }
+    }
+    return '';
+  }
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = trailerOrUrl.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : '';
+}
 import AnimeRow from '../../components/AnimeRow/AnimeRow';
 import { searchAnikage, getAnikageEpisodes } from '../../services/animepaheApi';
 import { useAuth } from '../../contexts/AuthContext';
@@ -27,6 +46,7 @@ function AnimeDetail({ onShowAuth }) {
   const [bookmarkCategory, setBookmarkCategory] = useState('');
   const [bookmarkLoading, setBookmarkLoading] = useState(false);
   const [episodesPage, setEpisodesPage] = useState(0);
+  const [showTrailer, setShowTrailer] = useState(false);
 
 
   useEffect(() => {
@@ -295,10 +315,10 @@ function AnimeDetail({ onShowAuth }) {
             {synopsis.length > 300 && <button className="detail-synopsis-toggle" onClick={() => setSynopsisExpanded(!synopsisExpanded)}>{synopsisExpanded ? 'SHOW LESS' : 'READ FULL SYNOPSIS'}</button>}
             <div className="detail-actions">
               <Link to={`/watch/${anime.mal_id}`} className="btn btn-primary"><Play size={16} /> Watch Episode 1</Link>
-              {trailerUrl && (
-                <a href={trailerUrl} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">
+              {getYouTubeId(anime.trailer) && (
+                <button onClick={() => setShowTrailer(true)} className="btn btn-secondary">
                   <Play size={16} fill="currentColor" /> Preview
-                </a>
+                </button>
               )}
               <div className="detail-bookmark-wrapper">
                 <button className={`btn ${bookmarked ? 'btn-bookmark-active' : 'btn-secondary'}`} onClick={handleBookmark} disabled={bookmarkLoading}>
@@ -422,6 +442,26 @@ function AnimeDetail({ onShowAuth }) {
           </>
         )}
       </section>
+      {showTrailer && getYouTubeId(anime.trailer) && (
+        <div className="modal-overlay" onClick={() => setShowTrailer(false)}>
+          <div className="modal-content trailer-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="trailer-modal-header">
+              <h3 className="trailer-modal-title">{title} - Official Trailer</h3>
+              <button className="trailer-modal-close" onClick={() => setShowTrailer(false)} aria-label="Close trailer">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="trailer-video-container">
+              <iframe
+                src={`https://www.youtube.com/embed/${getYouTubeId(anime.trailer)}?autoplay=1`}
+                title={`${title} Trailer`}
+                allowFullScreen
+                allow="autoplay; encrypted-media"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
