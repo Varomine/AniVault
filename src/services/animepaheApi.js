@@ -3,7 +3,7 @@
 // Provider: pahe only | Lang: dub only
 
 const BASE_URL = 'https://anikage-scraper-api.sapis.workers.dev';
-const PROVIDER = 'pahe';
+const PROVIDER = 'neko';
 const LANG = 'sub';
 
 /**
@@ -72,7 +72,7 @@ export async function getAnikageEpisodes(slug) {
  * 
  * streamUrl is a direct HLS URL: https://prox.anikage.cc/stream/.../index.txt
  */
-export async function getAnikageStreams(slug, episodeNumber, provider = 'pahe') {
+export async function getAnikageStreams(slug, episodeNumber, provider = 'neko') {
   try {
     const url = `${BASE_URL}/api/streams?slug=${encodeURIComponent(slug)}&episode=${episodeNumber}&provider=${provider}&lang=${LANG}`;
     const response = await fetch(url);

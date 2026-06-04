@@ -54,7 +54,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                 className={`server-custom-dropdown-btn ${serverDropdownOpen ? 'active' : ''}`}
                 onClick={() => setServerDropdownOpen(prev => !prev)}
               >
-                <span>{defaultServer === 'pahe' ? 'Pahe' : defaultServer === 'miko' ? 'Miko' : defaultServer === 'koto' ? 'Koto' : defaultServer === '123' ? '123' : defaultServer === 'allanime' ? 'AllAnime' : defaultServer === 'hanime' ? 'HAnime' : 'Zone'}</span>
+                <span>{defaultServer === 'neko' ? 'Neko' : defaultServer === 'miko' ? 'Miko' : defaultServer === 'koto' ? 'Koto' : defaultServer === '123' ? '123' : defaultServer === 'allanime' ? 'AllAnime' : defaultServer === 'hanime' ? 'HAnime' : 'Zone'}</span>
                 <ChevronDown size={16} className={`server-custom-dropdown-chevron ${serverDropdownOpen ? 'rotated' : ''}`} />
               </button>
 
@@ -62,16 +62,16 @@ export default function SettingsModal({ isOpen, onClose }) {
                 <div className="server-custom-dropdown-menu animate-scale-in">
                   <button
                     type="button"
-                    className={`server-custom-dropdown-option ${defaultServer === 'pahe' ? 'selected' : ''}`}
+                    className={`server-custom-dropdown-option ${defaultServer === 'neko' ? 'selected' : ''}`}
                     onClick={() => {
-                      setDefaultServer('pahe');
+                      setDefaultServer('neko');
                       setServerDropdownOpen(false);
                     }}
                   >
                     <span className="server-option-check-box">
-                      {defaultServer === 'pahe' && <Check size={10} strokeWidth={3} />}
+                      {defaultServer === 'neko' && <Check size={10} strokeWidth={3} />}
                     </span>
-                    <span>Pahe <span className="server-dropdown-tag">Hard-Sub • EN Sub Only</span></span>
+                    <span>Neko <span className="server-dropdown-tag">Hard-Sub • EN Sub Only</span></span>
                   </button>
 
                   <button

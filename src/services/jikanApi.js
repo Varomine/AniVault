@@ -191,6 +191,11 @@ export async function getRandomAnime() {
   return enqueueRequest(url, { bypassCache: true });
 }
 
+export async function getAnimeRelations(id) {
+  const url = buildUrl(`/anime/${id}/relations`);
+  return enqueueRequest(url);
+}
+
 export function getStatusText(status) {
   switch (status) {
     case 'Finished Airing': return 'FINISHED';

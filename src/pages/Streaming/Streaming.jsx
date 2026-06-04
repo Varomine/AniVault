@@ -6,10 +6,10 @@ import { search123Anime, get123AnimeStream } from '../../services/123animeApi';
 import { searchAllAnime, getAllAnimeStream } from '../../services/allanimeApi';
 import { getHAnimeStreams } from '../../services/hanimeApi';
 import { searchAniZone, getAniZoneEpisodes, getAniZoneStream } from '../../services/anizoneApi';
-import { getAnimeById, getAnimeRecommendations, getStatusText, getStatusClass } from '../../services/jikanApi';
+import { getAnimeById, getAnimeRelations, getStatusText, getStatusClass } from '../../services/jikanApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
-import { addBookmark, removeBookmark, getBookmarks, updateBookmarkCategory } from '../../services/bookmarkService';
+import { addBookmark, removeBookmark, isBookmarked, updateBookmarkCategory } from '../../services/bookmarkService';
 import { updateWatchHistory, saveEpisodeProgress, getEpisodeProgress } from '../../services/watchHistoryService';
 import HlsPlayer from '../../components/HlsPlayer/HlsPlayer';
 import './Streaming.css';
@@ -36,8 +36,9 @@ function Streaming({ onShowAuth }) {
   const [introTimestamp, setIntroTimestamp] = useState(null);
   const [outroTimestamp, setOutroTimestamp] = useState(null);
 
-  const [activeServer, setActiveServer] = useState(defaultServer || 'pahe');
+  const [activeServer, setActiveServer] = useState(defaultServer || 'neko');
   const [showServerModal, setShowServerModal] = useState(false);
+  const [selectedNekoSourceIndex, setSelectedNekoSourceIndex] = useState(0);
 
   const prevDefaultServerRef = useRef(defaultServer);
 
@@ -48,6 +49,11 @@ function Streaming({ onShowAuth }) {
       prevDefaultServerRef.current = defaultServer;
     }
   }, [defaultServer]);
+
+  // Reset selected neko source on episode or id change
+  useEffect(() => {
+    setSelectedNekoSourceIndex(0);
+  }, [currentEpisode, id]);
 
   const [searchLoading, setSearchLoading] = useState(false);
   const [episodesLoading, setEpisodesLoading] = useState(false);
@@ -74,14 +80,15 @@ function Streaming({ onShowAuth }) {
   const [bookmarked, setBookmarked] = useState(false);
   const [bookmarkCategory, setBookmarkCategory] = useState('');
   const [bookmarkLoading, setBookmarkLoading] = useState(false);
-  const [relatedAnime, setRelatedAnime] = useState([]);
+  const [relations, setRelations] = useState([]);
+  const [relationsLoading, setRelationsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('episodes');
 
   // Episode pagination state
   const [episodesPage, setEpisodesPage] = useState(0);
 
-  // Watch progress and Related load more states
+  // Watch progress state
   const [initialProgress, setInitialProgress] = useState(null);
-  const [showAllRelated, setShowAllRelated] = useState(false);
 
   // Track if slug has been resolved for this anime ID
   const resolvedForId = useRef(null);
@@ -106,6 +113,10 @@ function Streaming({ onShowAuth }) {
   // Get best source from streamSources for iOS fallback
   const bestSource = useMemo(() => {
     return getBestSource(streamSources);
+  }, [streamSources]);
+
+  const hardsubSources = useMemo(() => {
+    return streamSources.filter(s => s.type === 'hardsub' || s.quality?.toLowerCase().includes('hardsub'));
   }, [streamSources]);
 
   // Search Anikage for matching anime
@@ -379,7 +390,7 @@ function Streaming({ onShowAuth }) {
     let cancelled = false;
 
     const fetchStream = async () => {
-      if (activeServer === 'pahe' || activeServer === 'miko') {
+      if (activeServer === 'neko' || activeServer === 'miko') {
         if (!anikageSlug) return;
         setSourceLoading(true);
         setSourceError(null);
@@ -493,17 +504,34 @@ function Streaming({ onShowAuth }) {
     return () => { cancelled = true; };
   }, [activeServer, anikageSlug, oneTwoThreeId, allAnimeId, aniZoneId, aniZoneEpisodes, currentEpisode, anime]);
 
-  // ---- Related anime (delayed to not block) ----
+  // ---- Related anime (relations from Jikan API, only anime) ----
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
+    setRelationsLoading(true);
     const t = setTimeout(async () => {
       try {
-        const data = await getAnimeRecommendations(id);
-        setRelatedAnime((data.data || []).slice(0, 8).map(rec => rec.entry));
-      } catch { /* ignore */ }
+        const data = await getAnimeRelations(id);
+        if (!cancelled) {
+          setRelations(data.data || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch relations:', err);
+      } finally {
+        if (!cancelled) setRelationsLoading(false);
+      }
     }, 2000);
-    return () => clearTimeout(t);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [id]);
+
+  const animeRelations = useMemo(() => {
+    return relations
+      .map(rel => ({
+        ...rel,
+        entry: rel.entry.filter(entry => entry.type === 'anime')
+      }))
+      .filter(rel => rel.entry.length > 0);
+  }, [relations]);
 
   // ---- Update URL on ep change ----
   useEffect(() => {
@@ -617,7 +645,7 @@ function Streaming({ onShowAuth }) {
       }
     }
 
-    if (activeServer === 'pahe' || activeServer === 'miko') {
+    if (activeServer === 'neko' || activeServer === 'miko') {
       if (anikageEpisodes.length > 0) {
         return anikageEpisodes.filter(ep => ep.number > 0).sort((a, b) => a.number - b.number);
       }
@@ -878,7 +906,24 @@ function Streaming({ onShowAuth }) {
                 <span>{sourceError}</span>
               </div>
             ) : streamSources.length > 0 ? (
-              IS_IOS && bestSource ? (
+              activeServer === 'neko' ? (
+                hardsubSources.length > 0 ? (
+                  <iframe
+                    src={hardsubSources[selectedNekoSourceIndex]?.embedUrl || hardsubSources[0]?.embedUrl}
+                    className="streaming-iframe"
+                    allowFullScreen
+                    scrolling="no"
+                    allow="autoplay; fullscreen; picture-in-picture"
+                    sandbox="allow-same-origin allow-scripts"
+                    title={`${titleDisplay} - Episode ${currentEpisode} (Neko)`}
+                  />
+                ) : (
+                  <div className="streaming-player-error">
+                    <AlertCircle size={40} />
+                    <span>No hardsub sources available on Neko.</span>
+                  </div>
+                )
+              ) : IS_IOS && bestSource ? (
                 <iframe
                   src={`/embed.html?sources=${encodeURIComponent(JSON.stringify(streamSources))}&poster=${encodeURIComponent(anime?.images?.jpg?.large_image_url || '')}&t=${initialProgress}`}
                   className="streaming-iframe"
@@ -906,6 +951,23 @@ function Streaming({ onShowAuth }) {
               <div className="streaming-player-loading"><Play size={48} /><span>Select an episode</span></div>
             )}
           </div>
+
+          {activeServer === 'neko' && hardsubSources.length > 1 && (
+            <div className="streaming-neko-sources">
+              <span className="neko-sources-label">Source:</span>
+              <div className="neko-sources-list">
+                {hardsubSources.map((src, idx) => (
+                  <button
+                    key={idx}
+                    className={`neko-source-btn ${selectedNekoSourceIndex === idx ? 'active' : ''}`}
+                    onClick={() => setSelectedNekoSourceIndex(idx)}
+                  >
+                    {src.quality.replace('hardsub ', '')}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Unified Episode Navigation & Server Control Row */}
           <div className="streaming-ep-controls-row">
@@ -985,86 +1047,113 @@ function Streaming({ onShowAuth }) {
 
         {/* Episodes Panel */}
         <div className="streaming-episodes-panel">
-          <div className="streaming-episodes-header">
-            <h3>EPISODES</h3>
-            <span className="streaming-episodes-count">
-              {episodesLoading ? 'Loading...' : episodeList.length > 0 ? `${episodeList.length} available` : 'N/A'}
-            </span>
+          <div className="streaming-panel-tabs">
+            <button 
+              className={`streaming-panel-tab ${activeTab === 'episodes' ? 'active' : ''}`}
+              onClick={() => setActiveTab('episodes')}
+            >
+              Episodes
+            </button>
+            <button 
+              className={`streaming-panel-tab ${activeTab === 'relations' ? 'active' : ''}`}
+              onClick={() => setActiveTab('relations')}
+            >
+              Relations
+            </button>
           </div>
 
-          {episodesLoading ? (
-            <div className="streaming-episodes-loading"><div className="spinner" /><span>Loading...</span></div>
-          ) : episodeList.length > 0 ? (
+          {activeTab === 'episodes' ? (
             <>
-              {totalPages > 1 && (
-                <div className="streaming-ep-ranges-container">
-                  <button
-                    className="streaming-range-scroll-btn left"
-                    onClick={() => scrollRanges('left')}
-                    aria-label="Scroll left"
-                  >
-                    <ChevronLeft size={14} />
-                  </button>
-                  <div className="streaming-ep-pagination" ref={rangesScrollRef}>
-                    {Array.from({ length: totalPages }, (_, i) => {
-                      const start = i * PAGE_SIZE + 1;
-                      const end = Math.min((i + 1) * PAGE_SIZE, episodeList.length);
-                      return (
-                        <button
-                          key={i}
-                          className={`streaming-page-tab-btn ${episodesPage === i ? 'active' : ''}`}
-                          onClick={() => setEpisodesPage(i)}
-                        >
-                          {start}-{end}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <button
-                    className="streaming-range-scroll-btn right"
-                    onClick={() => scrollRanges('right')}
-                    aria-label="Scroll right"
-                  >
-                    <ChevronRight size={14} />
-                  </button>
-                </div>
-              )}
-              <div className="streaming-episodes-grid">
-                {paginatedEpisodes.map(ep => (
-                  <button key={ep.number}
-                    className={`streaming-episode-btn ${ep.number === currentEpisode ? 'active' : ''}`}
-                    onClick={() => handleEpisodeSelect(ep.number)}
-                    title={ep.title || `Episode ${ep.number}`}
-                  >{ep.number}</button>
-                ))}
+              <div className="streaming-episodes-header">
+                <h3>EPISODES</h3>
+                <span className="streaming-episodes-count">
+                  {episodesLoading ? 'Loading...' : episodeList.length > 0 ? `${episodeList.length} available` : 'N/A'}
+                </span>
               </div>
-            </>
-          ) : ((activeServer === 'pahe' || activeServer === 'miko') && searchError) ? (
-            <div className="streaming-episodes-empty"><AlertCircle size={24} /><p>{searchError}</p></div>
-          ) : (
-            <div className="streaming-episodes-empty"><AlertCircle size={24} /><p>No episodes available.</p></div>
-          )}
 
-          {relatedAnime.length > 0 && (
-            <div className="streaming-related">
-              <h4 className="streaming-related-title">RELATED</h4>
-              <div className="streaming-related-list">
-                {(showAllRelated ? relatedAnime : relatedAnime.slice(0, 4)).map(r => (
-                  <Link key={r.mal_id} to={`/anime/${r.mal_id}`} className="streaming-related-item">
-                    <img src={r.images?.jpg?.small_image_url || r.images?.jpg?.image_url || ''} alt={r.title} loading="lazy" />
-                    <span>{r.title}</span>
-                  </Link>
-                ))}
-              </div>
-              {relatedAnime.length > 4 && (
-                <button
-                  className="streaming-related-toggle-btn"
-                  onClick={() => setShowAllRelated(!showAllRelated)}
-                >
-                  {showAllRelated ? 'Show Less' : `Show More (${relatedAnime.length - 4} more)`}
-                </button>
+              {episodesLoading ? (
+                <div className="streaming-episodes-loading"><div className="spinner" /><span>Loading...</span></div>
+              ) : episodeList.length > 0 ? (
+                <>
+                  {totalPages > 1 && (
+                    <div className="streaming-ep-ranges-container">
+                      <button
+                        className="streaming-range-scroll-btn left"
+                        onClick={() => scrollRanges('left')}
+                        aria-label="Scroll left"
+                      >
+                        <ChevronLeft size={14} />
+                      </button>
+                      <div className="streaming-ep-pagination" ref={rangesScrollRef}>
+                        {Array.from({ length: totalPages }, (_, i) => {
+                          const start = i * PAGE_SIZE + 1;
+                          const end = Math.min((i + 1) * PAGE_SIZE, episodeList.length);
+                          return (
+                            <button
+                              key={i}
+                              className={`streaming-page-tab-btn ${episodesPage === i ? 'active' : ''}`}
+                              onClick={() => setEpisodesPage(i)}
+                            >
+                              {start}-{end}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button
+                        className="streaming-range-scroll-btn right"
+                        onClick={() => scrollRanges('right')}
+                        aria-label="Scroll right"
+                      >
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  )}
+                  <div className="streaming-episodes-grid">
+                    {paginatedEpisodes.map(ep => (
+                      <button key={ep.number}
+                        className={`streaming-episode-btn ${ep.number === currentEpisode ? 'active' : ''}`}
+                        onClick={() => handleEpisodeSelect(ep.number)}
+                        title={ep.title || `Episode ${ep.number}`}
+                      >{ep.number}</button>
+                    ))}
+                  </div>
+                </>
+              ) : ((activeServer === 'neko' || activeServer === 'miko') && searchError) ? (
+                <div className="streaming-episodes-empty"><AlertCircle size={24} /><p>{searchError}</p></div>
+              ) : (
+                <div className="streaming-episodes-empty"><AlertCircle size={24} /><p>No episodes available.</p></div>
               )}
-            </div>
+            </>
+          ) : (
+            <>
+              <div className="streaming-episodes-header">
+                <h3>RELATIONS</h3>
+                <span className="streaming-episodes-count">
+                  {relationsLoading ? 'Loading...' : animeRelations.length > 0 ? `${animeRelations.length} types` : 'N/A'}
+                </span>
+              </div>
+
+              {relationsLoading ? (
+                <div className="streaming-episodes-loading"><div className="spinner" /><span>Loading relations...</span></div>
+              ) : animeRelations.length > 0 ? (
+                <div className="streaming-relations-container">
+                  {animeRelations.map((rel, idx) => (
+                    <div key={idx} className="streaming-relation-group">
+                      <span className="streaming-relation-type">{rel.relation}</span>
+                      <div className="streaming-relation-entries">
+                        {rel.entry.map(entry => (
+                          <Link key={entry.mal_id} to={`/anime/${entry.mal_id}`} className="streaming-relation-card glass-effect">
+                            <span className="streaming-relation-title">{entry.name}</span>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="streaming-episodes-empty"><p>No related anime found.</p></div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1081,14 +1170,14 @@ function Streaming({ onShowAuth }) {
             <div className="server-modal-options">
               <button
                 type="button"
-                className={`server-modal-option ${activeServer === 'pahe' ? 'active' : ''}`}
+                className={`server-modal-option ${activeServer === 'neko' ? 'active' : ''}`}
                 onClick={() => {
-                  setActiveServer('pahe');
+                  setActiveServer('neko');
                   setShowServerModal(false);
                 }}
               >
                 <div className="server-modal-details">
-                  <span className="server-name">pahe</span>
+                  <span className="server-name">neko</span>
                   <div className="server-tags">
                     <span className="server-tag">Hard-Sub</span>
                     <span className="server-tag">EN Sub Only</span>

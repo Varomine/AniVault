@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Star, Play, Bookmark, Clock, Calendar, Tv, Loader2, X } from 'lucide-react';
-import { getAnimeById, getAnimeCharacters, getAnimeRecommendations, getAnimeEpisodes, getStatusText, getStatusClass } from '../../services/jikanApi';
+import { getAnimeById, getAnimeCharacters, getAnimeRecommendations, getAnimeEpisodes, getAnimeRelations, getStatusText, getStatusClass } from '../../services/jikanApi';
 
 function getYouTubeId(trailerOrUrl) {
   if (!trailerOrUrl) return '';
@@ -48,6 +48,9 @@ function AnimeDetail({ onShowAuth }) {
   const [episodesPage, setEpisodesPage] = useState(0);
   const [showTrailer, setShowTrailer] = useState(false);
   const [bookmarkedIds, setBookmarkedIds] = useState([]);
+  const [relations, setRelations] = useState([]);
+  const [relationsLoading, setRelationsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('episodes');
 
 
   useEffect(() => {
@@ -85,6 +88,30 @@ function AnimeDetail({ onShowAuth }) {
     const timer = setTimeout(fetchRecommendations, 500);
     return () => clearTimeout(timer);
   }, [id]);
+
+  useEffect(() => {
+    async function fetchRelations() {
+      setRelationsLoading(true);
+      try {
+        const data = await getAnimeRelations(id);
+        setRelations(data.data || []);
+      } catch (err) {
+        console.error('Failed to fetch relations:', err);
+      } finally {
+        setRelationsLoading(false);
+      }
+    }
+    fetchRelations();
+  }, [id]);
+
+  const animeRelations = useMemo(() => {
+    return relations
+      .map(rel => ({
+        ...rel,
+        entry: rel.entry.filter(entry => entry.type === 'anime')
+      }))
+      .filter(rel => rel.entry.length > 0);
+  }, [relations]);
 
   useEffect(() => {
     let cancelled = false;
@@ -400,52 +427,95 @@ function AnimeDetail({ onShowAuth }) {
         </div>
       </section>
 
-      {/* Episodes Section */}
+      {/* Episodes & Relations Section */}
       <section className="detail-episodes-section container">
-        <h2 className="detail-section-title">
-          Episodes
-          {totalEpisodes !== '?' && <span className="detail-episode-count">{totalEpisodes} episodes</span>}
-        </h2>
-        {episodesLoading ? (
-          <div className="detail-episodes-loading">
-            <div className="spinner" style={{ width: 24, height: 24 }} />
-            <span>Loading episodes...</span>
-          </div>
-        ) : (
-          <>
-            {epTotalPages > 1 && (
-              <div className="detail-episodes-pagination">
-                {Array.from({ length: epTotalPages }, (_, i) => {
-                  const start = i * EP_PAGE_SIZE + 1;
-                  const end = Math.min((i + 1) * EP_PAGE_SIZE, computedEpisodes.length);
+        <div className="detail-tabs-header">
+          <button 
+            className={`detail-tab-toggle-btn ${activeTab === 'episodes' ? 'active' : ''}`}
+            onClick={() => setActiveTab('episodes')}
+          >
+            Episodes
+            {totalEpisodes !== '?' && <span className="detail-tab-count">({totalEpisodes})</span>}
+          </button>
+          <button 
+            className={`detail-tab-toggle-btn ${activeTab === 'relations' ? 'active' : ''}`}
+            onClick={() => setActiveTab('relations')}
+          >
+            Relations
+            {animeRelations.length > 0 && <span className="detail-tab-count">({animeRelations.length})</span>}
+          </button>
+        </div>
+
+        {activeTab === 'episodes' ? (
+          episodesLoading ? (
+            <div className="detail-episodes-loading">
+              <div className="spinner" style={{ width: 24, height: 24 }} />
+              <span>Loading episodes...</span>
+            </div>
+          ) : (
+            <>
+              {epTotalPages > 1 && (
+                <div className="detail-episodes-pagination">
+                  {Array.from({ length: epTotalPages }, (_, i) => {
+                    const start = i * EP_PAGE_SIZE + 1;
+                    const end = Math.min((i + 1) * EP_PAGE_SIZE, computedEpisodes.length);
+                    return (
+                      <button
+                        key={i}
+                        className={`detail-page-tab-btn ${episodesPage === i ? 'active' : ''}`}
+                        onClick={() => setEpisodesPage(i)}
+                      >
+                        {start}-{end}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              
+              <div className="detail-episodes-grid">
+                {paginatedEpisodes.map((ep, idx) => {
+                  const epNum = ep.mal_id || (episodesPage * EP_PAGE_SIZE) + idx + 1;
                   return (
-                    <button
-                      key={i}
-                      className={`detail-page-tab-btn ${episodesPage === i ? 'active' : ''}`}
-                      onClick={() => setEpisodesPage(i)}
-                    >
-                      {start}-{end}
-                    </button>
+                    <Link key={epNum} to={`/watch/${anime.mal_id}/${epNum}`}
+                      className="detail-episode-btn" title={ep.title || `Episode ${epNum}`}>
+                      {epNum}
+                    </Link>
                   );
                 })}
+                {computedEpisodes.length === 0 && (
+                  <p className="detail-no-data">No episode data available yet.</p>
+                )}
               </div>
-            )}
-            
-            <div className="detail-episodes-grid">
-              {paginatedEpisodes.map((ep, idx) => {
-                const epNum = ep.mal_id || (episodesPage * EP_PAGE_SIZE) + idx + 1;
-                return (
-                  <Link key={epNum} to={`/watch/${anime.mal_id}/${epNum}`}
-                    className="detail-episode-btn" title={ep.title || `Episode ${epNum}`}>
-                    {epNum}
-                  </Link>
-                );
-              })}
-              {computedEpisodes.length === 0 && (
-                <p className="detail-no-data">No episode data available yet.</p>
-              )}
+            </>
+          )
+        ) : (
+          relationsLoading ? (
+            <div className="detail-episodes-loading">
+              <div className="spinner" style={{ width: 24, height: 24 }} />
+              <span>Loading relations...</span>
             </div>
-          </>
+          ) : animeRelations.length > 0 ? (
+            <div className="detail-relations-container">
+              {animeRelations.map((rel, idx) => (
+                <div key={idx} className="detail-relation-group">
+                  <span className="detail-relation-type">{rel.relation}</span>
+                  <div className="detail-relation-entries">
+                    {rel.entry.map(entry => (
+                      <Link 
+                        key={entry.mal_id} 
+                        to={`/anime/${entry.mal_id}`} 
+                        className="detail-relation-card glass-effect"
+                      >
+                        <span className="detail-relation-title">{entry.name}</span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="detail-no-data">No related anime found.</p>
+          )
         )}
       </section>
 
