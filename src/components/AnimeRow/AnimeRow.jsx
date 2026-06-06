@@ -8,6 +8,24 @@ export default function AnimeRow({ title, anime = [], loading, viewAllLink, onVi
   const containerRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
+  const [hoveredCardId, setHoveredCardId] = useState(null);
+
+  const handleCardMouseEnter = useCallback((id) => {
+    setHoveredCardId(id);
+  }, []);
+
+  const handleCardMouseLeave = useCallback((e) => {
+    // If the mouse is moving directly to a row navigation arrow, keep the card hovered
+    const toElement = e.relatedTarget;
+    if (toElement && toElement.classList.contains('anime-row-arrow')) {
+      return;
+    }
+    setHoveredCardId(null);
+  }, []);
+
+  const handleWrapperMouseLeave = useCallback(() => {
+    setHoveredCardId(null);
+  }, []);
 
   // Filter duplicates to prevent warning for duplicate keys
   const uniqueAnime = useMemo(() => {
@@ -88,7 +106,10 @@ export default function AnimeRow({ title, anime = [], loading, viewAllLink, onVi
       </div>
 
       {/* Scrollable Wrapper */}
-      <div className={`anime-row-wrapper${canScrollLeft ? ' has-fade-left' : ''}${canScrollRight ? ' has-fade-right' : ''}`}>
+      <div 
+        className={`anime-row-wrapper${canScrollLeft ? ' has-fade-left' : ''}${canScrollRight ? ' has-fade-right' : ''}`}
+        onMouseLeave={handleWrapperMouseLeave}
+      >
         {/* Left Arrow */}
         <button
           className={`anime-row-arrow left${!canScrollLeft ? ' hidden' : ''}`}
@@ -106,6 +127,9 @@ export default function AnimeRow({ title, anime = [], loading, viewAllLink, onVi
               anime={item}
               onBookmark={onBookmark}
               isBookmarked={bookmarkedIds.includes(item.mal_id)}
+              isHoveredOverride={hoveredCardId === item.mal_id}
+              onMouseEnter={() => handleCardMouseEnter(item.mal_id)}
+              onMouseLeave={handleCardMouseLeave}
             />
           ))}
         </div>

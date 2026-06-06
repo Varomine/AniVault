@@ -3,7 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { Star, Play, Bookmark, Loader2 } from 'lucide-react';
 import './AnimeCard.css';
 
-export default function AnimeCard({ anime, onClick, onBookmark, isBookmarked }) {
+export default function AnimeCard({ 
+  anime, 
+  onClick, 
+  onBookmark, 
+  isBookmarked,
+  isHoveredOverride = false,
+  onMouseEnter,
+  onMouseLeave
+}) {
   const navigate = useNavigate();
   const [localLoading, setLocalLoading] = useState(false);
 
@@ -59,7 +67,12 @@ export default function AnimeCard({ anime, onClick, onBookmark, isBookmarked }) 
   };
 
   return (
-    <div className={`anime-card${anime.isHistory ? ' anime-card--history' : ''}`} onClick={handleCardClick}>
+    <div 
+      className={`anime-card${anime.isHistory ? ' anime-card--history' : ''}${isHoveredOverride ? ' is-hovered' : ''}`} 
+      onClick={handleCardClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
       {/* Poster */}
       <img
         className="anime-card-image"

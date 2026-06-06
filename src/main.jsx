@@ -6,7 +6,8 @@ import { SettingsProvider } from './contexts/SettingsContext';
 import App from './App';
 import './index.css';
 
-// Security: Disable right click and inspect element shortcuts globally
+// Security: Temporarily disabled for debugging
+/*
 if (typeof window !== 'undefined') {
   document.addEventListener('contextmenu', e => e.preventDefault());
   document.addEventListener('keydown', e => {
@@ -41,6 +42,7 @@ if (typeof window !== 'undefined') {
   };
   setInterval(detectDevTools, 1000);
 }
+*/
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

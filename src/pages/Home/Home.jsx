@@ -45,6 +45,7 @@ import AnimeRow from '../../components/AnimeRow/AnimeRow';
 import { getWatchHistory } from '../../services/watchHistoryService';
 import { useAuth } from '../../contexts/AuthContext';
 import { addBookmark, removeBookmark, isBookmarked, getBookmarks } from '../../services/bookmarkService';
+import { clearLogos } from '../../config/clearLogos';
 import './Home.css';
 
 function Home({ onShowAuth }) {
@@ -56,6 +57,7 @@ function Home({ onShowAuth }) {
   const [bannerLoading, setBannerLoading] = useState(true);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showTrailer, setShowTrailer] = useState(false);
+  const [logoError, setLogoError] = useState(false);
 
   // Section data state
   const [trending, setTrending] = useState([]);
@@ -109,6 +111,11 @@ function Home({ onShowAuth }) {
     };
     checkBannerBookmark();
   }, [currentBanner, bannerAnime, isAuthenticated, user]);
+
+  // Reset logo error when current banner changes
+  useEffect(() => {
+    setLogoError(false);
+  }, [currentBanner]);
 
   // Fetch all user bookmarks for card list rows
   useEffect(() => {
@@ -343,6 +350,7 @@ function Home({ onShowAuth }) {
     '';
   const japaneseTitle = anime?.title_japanese || '';
   const mainTitle = anime?.title_english || anime?.title || '';
+  const logoUrl = anime?.mal_id ? clearLogos[anime.mal_id] : null;
   const score = anime?.score || 0;
   const type = anime?.type || '';
   const season = anime?.season
@@ -378,11 +386,24 @@ function Home({ onShowAuth }) {
             <div
               className={`hero-content ${isTransitioning ? 'hero-content-exit' : 'hero-content-enter'}`}
             >
-              {japaneseTitle && (
-                <span className="hero-japanese-title">{japaneseTitle}</span>
+              {(logoUrl && !logoError) ? (
+                <div className="hero-logo-container">
+                  <img 
+                    src={logoUrl} 
+                    alt={mainTitle} 
+                    className="hero-logo-img" 
+                    referrerPolicy="no-referrer"
+                    onError={() => setLogoError(true)}
+                  />
+                </div>
+              ) : japaneseTitle ? (
+                <>
+                  <h1 className="hero-japanese-title">{japaneseTitle}</h1>
+                  <h2 className="hero-title">{mainTitle}</h2>
+                </>
+              ) : (
+                <h1 className="hero-japanese-title">{mainTitle}</h1>
               )}
-
-              <h1 className="hero-title">{mainTitle}</h1>
 
               {/* Info Row */}
               <div className="hero-info-row">

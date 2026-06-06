@@ -71,7 +71,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                     <span className="server-option-check-box">
                       {defaultServer === 'neko' && <Check size={10} strokeWidth={3} />}
                     </span>
-                    <span>Neko <span className="server-dropdown-tag">Hard-Sub • EN Sub Only</span></span>
+                    <span>Neko <span className="server-dropdown-tag best">Fast</span></span>
                   </button>
 
                   <button
@@ -85,7 +85,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                     <span className="server-option-check-box">
                       {defaultServer === 'miko' && <Check size={10} strokeWidth={3} />}
                     </span>
-                    <span>Miko <span className="server-dropdown-tag">Hard-Sub • EN Sub Only</span></span>
+                    <span>Miko</span>
                   </button>
 
                   <button
@@ -99,7 +99,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                     <span className="server-option-check-box">
                       {defaultServer === 'koto' && <Check size={10} strokeWidth={3} />}
                     </span>
-                    <span>Koto <span className="server-dropdown-tag best">Soft-Sub • Best Server</span></span>
+                    <span>Koto <span className="server-dropdown-tag best">Fast</span></span>
                   </button>
 
                   <button
@@ -113,7 +113,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                     <span className="server-option-check-box">
                       {defaultServer === '123' && <Check size={10} strokeWidth={3} />}
                     </span>
-                    <span>123 <span className="server-dropdown-tag">Hard-Sub • English Only</span></span>
+                    <span>123</span>
                   </button>
 
                   <button
@@ -127,7 +127,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                     <span className="server-option-check-box">
                       {defaultServer === 'allanime' && <Check size={10} strokeWidth={3} />}
                     </span>
-                    <span>AllAnime <span className="server-dropdown-tag">Hard-Sub • English Only</span></span>
+                    <span>AllAnime</span>
                   </button>
 
                   <button
@@ -141,7 +141,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                     <span className="server-option-check-box">
                       {defaultServer === 'hanime' && <Check size={10} strokeWidth={3} />}
                     </span>
-                    <span>HAnime <span className="server-dropdown-tag hentai">Hard-Sub • 18+ Only </span></span>
+                    <span>HAnime <span className="server-dropdown-tag hentai">18+</span></span>
                   </button>
 
                   <button
@@ -155,7 +155,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                     <span className="server-option-check-box">
                       {defaultServer === 'zone' && <Check size={10} strokeWidth={3} />}
                     </span>
-                    <span>Zone <span className="server-dropdown-tag best">Soft-Sub • ASS Subtitles</span></span>
+                    <span>Zone</span>
                   </button>
                 </div>
               )}

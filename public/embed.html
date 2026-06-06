@@ -32,7 +32,8 @@
   <div class="artplayer-app"></div>
 
   <script>
-    // Security: Disable right click and dev tools shortcut keys inside the iframe
+    // Security: Temporarily disabled for debugging
+    /*
     document.addEventListener('contextmenu', e => e.preventDefault());
     document.addEventListener('keydown', e => {
       if (e.key === 'F12') {
@@ -73,6 +74,7 @@
       console.log(element);
     };
     setInterval(detectDevTools, 1000);
+    */
 
     const urlParams = new URLSearchParams(window.location.search);
     const singleUrl = urlParams.get('url');
@@ -147,7 +149,7 @@
       try {
         const urlObj = new URL(url, window.location.href);
         if (urlObj.origin !== window.location.origin) {
-          return `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`;
+          return `https://proxy.corsfix.com/?url=${encodeURIComponent(url)}`;
         }
       } catch (e) {
         console.error('Failed to parse subtitle URL for proxy:', e);

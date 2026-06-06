@@ -27,6 +27,110 @@ import { useAuth } from '../../contexts/AuthContext';
 import { addBookmark, removeBookmark, getBookmarks, updateBookmarkCategory } from '../../services/bookmarkService';
 import './AnimeDetail.css';
 
+// Helper functions for matching titles and seasons
+function normalizeTitle(str) {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getSeasonNumber(titleStr) {
+  const norm = titleStr.toLowerCase();
+  const seasonMatch = norm.match(/season\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)/);
+  if (seasonMatch) {
+    const val = seasonMatch[1];
+    if (/\d+/.test(val)) return parseInt(val);
+    const words = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+    return words[val] || null;
+  }
+  const ordinalMatch = norm.match(/(\d+)(st|nd|rd|th)\s+season/);
+  if (ordinalMatch) {
+    return parseInt(ordinalMatch[1]);
+  }
+  const romanMatch = norm.match(/\s+(ii|iii|iv|v|vi|vii|viii|ix|x)$/);
+  if (romanMatch) {
+    const roman = romanMatch[1];
+    const map = { ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
+    return map[roman] || null;
+  }
+  return null;
+}
+
+function cleanTitleForBaseComparison(normTitle) {
+  return normTitle
+    .replace(/season\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)/g, '')
+    .replace(/(\d+)(st|nd|rd|th)\s+season/g, '')
+    .replace(/\s+(ii|iii|iv|v|vi|vii|viii|ix|x)$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function findBestAnikageMatch(animeData, results) {
+  if (!animeData || !results || results.length === 0) return null;
+
+  const targetTitles = [
+    animeData.title,
+    animeData.title_english,
+    ...(animeData.title_synonyms || [])
+  ].filter(Boolean);
+
+  const scoredResults = results.map(r => {
+    const resultTitles = [
+      r.title?.english,
+      r.title?.romaji,
+      typeof r.title === 'string' ? r.title : null
+    ].filter(Boolean);
+
+    let bestScore = 0;
+
+    for (const t of targetTitles) {
+      const tNorm = normalizeTitle(t);
+      const tSeason = getSeasonNumber(t) || 1;
+      const tBase = cleanTitleForBaseComparison(tNorm);
+
+      for (const rT of resultTitles) {
+        const rNorm = normalizeTitle(rT);
+        const rSeason = getSeasonNumber(rNorm) || 1;
+        const rBase = cleanTitleForBaseComparison(rNorm);
+
+        if (tSeason !== rSeason) continue;
+
+        if (tBase === rBase) {
+          bestScore = Math.max(bestScore, 100);
+        } else if (tBase.includes(rBase) || rBase.includes(tBase)) {
+          const ratio = Math.min(tBase.length, rBase.length) / Math.max(tBase.length, rBase.length);
+          const score = 50 + Math.floor(ratio * 40);
+          bestScore = Math.max(bestScore, score);
+        } else {
+          const tTokens = tBase.split(' ').filter(tk => tk.length > 2);
+          const rTokens = rBase.split(' ').filter(tk => tk.length > 2);
+          if (tTokens.length > 0 && rTokens.length > 0) {
+            const common = tTokens.filter(tk => rTokens.includes(tk));
+            const ratioTarget = common.length / tTokens.length;
+            const ratioResult = common.length / rTokens.length;
+            const maxRatio = Math.max(ratioTarget, ratioResult);
+            if (maxRatio >= 0.7) {
+              const score = Math.floor(maxRatio * 50);
+              bestScore = Math.max(bestScore, score);
+            }
+          }
+        }
+      }
+    }
+
+    return { result: r, score: bestScore };
+  });
+
+  const validMatches = scoredResults.filter(item => item.score > 0);
+  if (validMatches.length === 0) return null;
+
+  validMatches.sort((a, b) => b.score - a.score);
+  return validMatches[0].result;
+}
+
 function AnimeDetail({ onShowAuth }) {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -132,36 +236,29 @@ function AnimeDetail({ onShowAuth }) {
       if (parseInt(id) === 5042) {
         resolvedSlug = '8XzUtDNZYp';
       } else {
+        let allCandidates = [];
+        const seenSlugs = new Set();
+
         for (const title of titles) {
           if (cancelled) return;
           try {
             const results = await searchAnikage(title);
             if (results && results.length > 0) {
-              let match = results[0];
-              const jikanEps = anime.episodes || 0;
-              
-              // Try exact title match
-              const exactMatch = results.find(r => {
-                const rTitle = (r.title?.english || r.title?.romaji || '').toLowerCase();
-                return rTitle === title.toLowerCase();
-              });
-              if (exactMatch) match = exactMatch;
-
-              // Prefer episode count matches
-              if (jikanEps > 0 && results.length > 1) {
-                const epMatch = results.find(r => {
-                  const rEps = r.totalEpisodes || r.currentEpisode || 0;
-                  return Math.abs(rEps - jikanEps) <= 2;
-                });
-                if (epMatch) match = epMatch;
+              for (const r of results) {
+                if (r.slug && !seenSlugs.has(r.slug)) {
+                  seenSlugs.add(r.slug);
+                  allCandidates.push(r);
+                }
               }
-
-              resolvedSlug = match.slug;
-              break;
             }
           } catch (err) {
             console.error('Anikage search in details failed:', err);
           }
+        }
+
+        const match = findBestAnikageMatch(anime, allCandidates);
+        if (match) {
+          resolvedSlug = match.slug;
         }
       }
 
@@ -452,6 +549,8 @@ function AnimeDetail({ onShowAuth }) {
               <div className="spinner" style={{ width: 24, height: 24 }} />
               <span>Loading episodes...</span>
             </div>
+          ) : computedEpisodes.length === 0 ? (
+            <p className="detail-no-data">No episode data available yet.</p>
           ) : (
             <>
               {epTotalPages > 1 && (
@@ -482,9 +581,6 @@ function AnimeDetail({ onShowAuth }) {
                     </Link>
                   );
                 })}
-                {computedEpisodes.length === 0 && (
-                  <p className="detail-no-data">No episode data available yet.</p>
-                )}
               </div>
             </>
           )

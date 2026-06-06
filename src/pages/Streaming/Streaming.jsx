@@ -14,6 +14,110 @@ import { updateWatchHistory, saveEpisodeProgress, getEpisodeProgress } from '../
 import HlsPlayer from '../../components/HlsPlayer/HlsPlayer';
 import './Streaming.css';
 
+// Helper functions for matching titles and seasons
+function normalizeTitle(str) {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getSeasonNumber(titleStr) {
+  const norm = titleStr.toLowerCase();
+  const seasonMatch = norm.match(/season\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)/);
+  if (seasonMatch) {
+    const val = seasonMatch[1];
+    if (/\d+/.test(val)) return parseInt(val);
+    const words = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+    return words[val] || null;
+  }
+  const ordinalMatch = norm.match(/(\d+)(st|nd|rd|th)\s+season/);
+  if (ordinalMatch) {
+    return parseInt(ordinalMatch[1]);
+  }
+  const romanMatch = norm.match(/\s+(ii|iii|iv|v|vi|vii|viii|ix|x)$/);
+  if (romanMatch) {
+    const roman = romanMatch[1];
+    const map = { ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
+    return map[roman] || null;
+  }
+  return null;
+}
+
+function cleanTitleForBaseComparison(normTitle) {
+  return normTitle
+    .replace(/season\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)/g, '')
+    .replace(/(\d+)(st|nd|rd|th)\s+season/g, '')
+    .replace(/\s+(ii|iii|iv|v|vi|vii|viii|ix|x)$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function findBestAnikageMatch(animeData, results) {
+  if (!animeData || !results || results.length === 0) return null;
+
+  const targetTitles = [
+    animeData.title,
+    animeData.title_english,
+    ...(animeData.title_synonyms || [])
+  ].filter(Boolean);
+
+  const scoredResults = results.map(r => {
+    const resultTitles = [
+      r.title?.english,
+      r.title?.romaji,
+      typeof r.title === 'string' ? r.title : null
+    ].filter(Boolean);
+
+    let bestScore = 0;
+
+    for (const t of targetTitles) {
+      const tNorm = normalizeTitle(t);
+      const tSeason = getSeasonNumber(t) || 1;
+      const tBase = cleanTitleForBaseComparison(tNorm);
+
+      for (const rT of resultTitles) {
+        const rNorm = normalizeTitle(rT);
+        const rSeason = getSeasonNumber(rNorm) || 1;
+        const rBase = cleanTitleForBaseComparison(rNorm);
+
+        if (tSeason !== rSeason) continue;
+
+        if (tBase === rBase) {
+          bestScore = Math.max(bestScore, 100);
+        } else if (tBase.includes(rBase) || rBase.includes(tBase)) {
+          const ratio = Math.min(tBase.length, rBase.length) / Math.max(tBase.length, rBase.length);
+          const score = 50 + Math.floor(ratio * 40);
+          bestScore = Math.max(bestScore, score);
+        } else {
+          const tTokens = tBase.split(' ').filter(tk => tk.length > 2);
+          const rTokens = rBase.split(' ').filter(tk => tk.length > 2);
+          if (tTokens.length > 0 && rTokens.length > 0) {
+            const common = tTokens.filter(tk => rTokens.includes(tk));
+            const ratioTarget = common.length / tTokens.length;
+            const ratioResult = common.length / rTokens.length;
+            const maxRatio = Math.max(ratioTarget, ratioResult);
+            if (maxRatio >= 0.7) {
+              const score = Math.floor(maxRatio * 50);
+              bestScore = Math.max(bestScore, score);
+            }
+          }
+        }
+      }
+    }
+
+    return { result: r, score: bestScore };
+  });
+
+  const validMatches = scoredResults.filter(item => item.score > 0);
+  if (validMatches.length === 0) return null;
+
+  validMatches.sort((a, b) => b.score - a.score);
+  return validMatches[0].result;
+}
+
 // Cache slugs to avoid re-searching
 const slugCache = new Map();
 
@@ -116,7 +220,8 @@ function Streaming({ onShowAuth }) {
   }, [streamSources]);
 
   const hardsubSources = useMemo(() => {
-    return streamSources.filter(s => s.type === 'hardsub' || s.quality?.toLowerCase().includes('hardsub'));
+    const hardsubs = streamSources.filter(s => s.type === 'hardsub' || s.quality?.toLowerCase().includes('hardsub'));
+    return hardsubs.length > 0 ? hardsubs : streamSources;
   }, [streamSources]);
 
   // Search Anikage for matching anime
@@ -138,44 +243,40 @@ function Streaming({ onShowAuth }) {
       animeData.title_japanese,
     ].filter(Boolean))];
 
+    let allCandidates = [];
+    const seenSlugs = new Set();
+
     for (const title of titles) {
       if (cancelled) return;
       try {
         const results = await searchAnikage(title);
-        if (cancelled || results.length === 0) continue;
-
-        // Better matching: prefer matching title AND episode count
-        let match = results[0];
-        const jikanEps = animeData.episodes || 0;
-
-        // Try exact title match first
-        const exactMatch = results.find(r => {
-          const rTitle = (r.title?.english || r.title?.romaji || '').toLowerCase();
-          return rTitle === title.toLowerCase();
-        });
-        if (exactMatch) match = exactMatch;
-
-        // If multiple results, prefer one with matching episode count for TV series
-        if (jikanEps > 0 && results.length > 1) {
-          const epMatch = results.find(r => {
-            const rEps = r.totalEpisodes || r.currentEpisode || 0;
-            return Math.abs(rEps - jikanEps) <= 2;
-          });
-          if (epMatch) match = epMatch;
+        if (results && results.length > 0) {
+          for (const r of results) {
+            if (r.slug && !seenSlugs.has(r.slug)) {
+              seenSlugs.add(r.slug);
+              allCandidates.push(r);
+            }
+          }
         }
+      } catch (err) {
+        console.error(`Search failed for "${title}":`, err);
+      }
+    }
 
-        // Cache it
-        slugCache.set(malId, { slug: match.slug, totalEpisodes: match.totalEpisodes || match.currentEpisode || 0 });
-        setAnikageSlug(match.slug);
-        setTotalEpisodeCount(match.totalEpisodes || match.currentEpisode || 0);
-        resolvedForId.current = malId;
-        setSearchLoading(false);
-        return;
-      } catch (err) { console.error(`Search failed for "${title}":`, err); }
+    const match = findBestAnikageMatch(animeData, allCandidates);
+
+    if (match) {
+      // Cache it
+      slugCache.set(malId, { slug: match.slug, totalEpisodes: match.totalEpisodes || match.currentEpisode || 0 });
+      setAnikageSlug(match.slug);
+      setTotalEpisodeCount(match.totalEpisodes || match.currentEpisode || 0);
+      resolvedForId.current = malId;
+      setSearchLoading(false);
+      return;
     }
 
     if (!cancelled) {
-      setSearchError('Anime not found on streaming server.');
+      setSearchError('This server does not have that anime.');
       setSearchLoading(false);
     }
   }
@@ -920,7 +1021,7 @@ function Streaming({ onShowAuth }) {
                 ) : (
                   <div className="streaming-player-error">
                     <AlertCircle size={40} />
-                    <span>No hardsub sources available on Neko.</span>
+                    <span>No sources available on Neko.</span>
                   </div>
                 )
               ) : IS_IOS && bestSource ? (
@@ -962,7 +1063,7 @@ function Streaming({ onShowAuth }) {
                     className={`neko-source-btn ${selectedNekoSourceIndex === idx ? 'active' : ''}`}
                     onClick={() => setSelectedNekoSourceIndex(idx)}
                   >
-                    {src.quality.replace('hardsub ', '')}
+                    {src.quality.replace('hardsub ', '').replace('softsub ', '')}
                   </button>
                 ))}
               </div>
@@ -1179,8 +1280,7 @@ function Streaming({ onShowAuth }) {
                 <div className="server-modal-details">
                   <span className="server-name">neko</span>
                   <div className="server-tags">
-                    <span className="server-tag">Hard-Sub</span>
-                    <span className="server-tag">EN Sub Only</span>
+                    <span className="server-tag best">Fast</span>
                   </div>
                 </div>
                 <span className="server-status-dot" />
@@ -1195,10 +1295,6 @@ function Streaming({ onShowAuth }) {
               >
                 <div className="server-modal-details">
                   <span className="server-name">Miko</span>
-                  <div className="server-tags">
-                    <span className="server-tag">Hard-Sub</span>
-                    <span className="server-tag">EN Sub Only</span>
-                  </div>
                 </div>
                 <span className="server-status-dot" />
               </button>
@@ -1213,8 +1309,7 @@ function Streaming({ onShowAuth }) {
                 <div className="server-modal-details">
                   <span className="server-name">Koto</span>
                   <div className="server-tags">
-                    <span className="server-tag">Soft-Sub</span>
-                    <span className="server-tag best">Best Server</span>
+                    <span className="server-tag best">Fast</span>
                   </div>
                 </div>
                 <span className="server-status-dot" />
@@ -1229,10 +1324,6 @@ function Streaming({ onShowAuth }) {
               >
                 <div className="server-modal-details">
                   <span className="server-name">123</span>
-                  <div className="server-tags">
-                    <span className="server-tag">Hard-Sub</span>
-                    <span className="server-tag">English Only</span>
-                  </div>
                 </div>
                 <span className="server-status-dot" />
               </button>
@@ -1246,10 +1337,6 @@ function Streaming({ onShowAuth }) {
               >
                 <div className="server-modal-details">
                   <span className="server-name">AllAnime</span>
-                  <div className="server-tags">
-                    <span className="server-tag">Hard-Sub</span>
-                    <span className="server-tag">English Only</span>
-                  </div>
                 </div>
                 <span className="server-status-dot" />
               </button>
@@ -1264,8 +1351,7 @@ function Streaming({ onShowAuth }) {
                 <div className="server-modal-details">
                   <span className="server-name">HAnime</span>
                   <div className="server-tags">
-                    <span className="server-tag hentai">Hard-Sub</span>
-                    <span className="server-tag hentai">18+ Only</span>
+                    <span className="server-tag hentai">18+</span>
                   </div>
                 </div>
                 <span className="server-status-dot" />
@@ -1280,10 +1366,6 @@ function Streaming({ onShowAuth }) {
               >
                 <div className="server-modal-details">
                   <span className="server-name">Zone</span>
-                  <div className="server-tags">
-                    <span className="server-tag">Soft-Sub</span>
-                    <span className="server-tag best">ASS Subtitles</span>
-                  </div>
                 </div>
                 <span className="server-status-dot" />
               </button>

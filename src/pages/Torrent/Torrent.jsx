@@ -13,6 +13,15 @@ const POPULAR_SEARCHES = [
   'My Hero Academia'
 ];
 
+function formatBytes(bytes, decimals = 2) {
+  if (!bytes) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
 export default function Torrent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeQuery, setActiveQuery] = useState('One Piece');
@@ -28,8 +37,7 @@ export default function Torrent() {
     setLoading(true);
     setError(null);
     try {
-      const targetUrl = `https://anikage.cc/api/media/torrents/search?q=${encodeURIComponent(trimmed)}`;
-      const url = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`;
+      const url = `https://feed.animetosho.org/json?qx=1&q=${encodeURIComponent(trimmed)}`;
       const res = await fetch(url);
       
       if (!res.ok) {
@@ -37,7 +45,15 @@ export default function Torrent() {
       }
       
       const data = await res.json();
-      const rawResults = data.results || [];
+      const rawResults = (data || []).map(item => ({
+        title: item.title,
+        size: formatBytes(item.total_size),
+        seeders: item.seeders || 0,
+        leechers: item.leechers || 0,
+        magnet: item.magnet_uri,
+        torrent: item.torrent_url,
+        link: item.link
+      }));
       
       // Sort results by seeders descending as requested
       const sortedResults = [...rawResults].sort((a, b) => (b.seeders || 0) - (a.seeders || 0));
