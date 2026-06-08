@@ -31,6 +31,22 @@ function getYouTubeId(trailerOrUrl) {
   const match = trailerOrUrl.match(regExp);
   return (match && match[2].length === 11) ? match[2] : '';
 }
+
+
+
+function decodeBase64Image(coverPath) {
+  if (!coverPath) return '';
+  if (coverPath.startsWith('/i/')) {
+    const base64Str = coverPath.substring(3);
+    try {
+      return window.atob(base64Str);
+    } catch (e) {
+      console.error('Failed to decode base64 cover:', e);
+      return '';
+    }
+  }
+  return coverPath;
+}
 import {
   getBannerAnime,
   getTrendingAnime,
@@ -39,6 +55,8 @@ import {
   getUpcomingAnime,
   getStatusText,
   getStatusClass,
+  getTopAnime,
+  searchAnime,
 } from '../../services/jikanApi';
 
 import AnimeRow from '../../components/AnimeRow/AnimeRow';
@@ -71,6 +89,13 @@ function Home({ onShowAuth }) {
   const [seasonalLoading, setSeasonalLoading] = useState(true);
   const [favoritesLoading, setFavoritesLoading] = useState(true);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
+
+  // New section states
+  const [trendingWeek, setTrendingWeek] = useState([]);
+  const [trendingWeekLoading, setTrendingWeekLoading] = useState(true);
+  const [popularMovies, setPopularMovies] = useState([]);
+  const [popularMoviesLoading, setPopularMoviesLoading] = useState(true);
+  const [resolvingTrendingId, setResolvingTrendingId] = useState(null);
 
   // Auth & Bookmarks state
   const { user, isAuthenticated } = useAuth();
@@ -186,6 +211,23 @@ function Home({ onShowAuth }) {
     }
   }, [isAuthenticated, user, userBookmarks, onShowAuth]);
 
+  const handleTrendingClick = useCallback(async (item) => {
+    if (resolvingTrendingId) return;
+    setResolvingTrendingId(item.id);
+    try {
+      const res = await searchAnime({ q: item.title, limit: 1 });
+      if (res?.data?.length > 0) {
+        navigate(`/anime/${res.data[0].mal_id}`);
+      } else {
+        alert(`Could not find "${item.title}" on database.`);
+      }
+    } catch (err) {
+      console.error('Failed to resolve MAL ID:', err);
+    } finally {
+      setResolvingTrendingId(null);
+    }
+  }, [resolvingTrendingId, navigate]);
+
 
 
   // Auto-rotate timer refs
@@ -194,6 +236,7 @@ function Home({ onShowAuth }) {
 
   // Start auto-rotate
   const startAutoRotate = useCallback(() => {
+    if (showTrailer) return;
     if (autoRotateRef.current) clearInterval(autoRotateRef.current);
     autoRotateRef.current = setInterval(() => {
       setIsTransitioning(true);
@@ -204,7 +247,7 @@ function Home({ onShowAuth }) {
         setIsTransitioning(false);
       }, 500);
     }, 8000);
-  }, [bannerAnime]);
+  }, [bannerAnime, showTrailer]);
 
   // Stop auto-rotate and restart after delay
   const handleManualNavigation = useCallback(
@@ -218,11 +261,13 @@ function Home({ onShowAuth }) {
         setIsTransitioning(false);
       }, 500);
 
-      restartTimeoutRef.current = setTimeout(() => {
-        startAutoRotate();
-      }, 10000);
+      if (!showTrailer) {
+        restartTimeoutRef.current = setTimeout(() => {
+          startAutoRotate();
+        }, 10000);
+      }
     },
-    [startAutoRotate]
+    [startAutoRotate, showTrailer]
   );
 
   const goToPrev = useCallback(() => {
@@ -270,14 +315,14 @@ function Home({ onShowAuth }) {
 
   // Start auto-rotate when banner data is ready
   useEffect(() => {
-    if (bannerAnime.length > 1) {
+    if (bannerAnime.length > 1 && !showTrailer) {
       startAutoRotate();
     }
     return () => {
       if (autoRotateRef.current) clearInterval(autoRotateRef.current);
       if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
     };
-  }, [bannerAnime.length, startAutoRotate]);
+  }, [bannerAnime.length, startAutoRotate, showTrailer]);
 
   // Fetch section data with staggered delays
   useEffect(() => {
@@ -319,6 +364,34 @@ function Home({ onShowAuth }) {
         console.error('Failed to fetch favorites:', err);
       } finally {
         if (!cancelled) setFavoritesLoading(false);
+      }
+
+      await new Promise((r) => setTimeout(r, 400));
+
+      // Fetch Jikan Top 10 for Trending This Week
+      try {
+        const topRes = await getTopAnime({ filter: 'airing', limit: 10 });
+        if (!cancelled && topRes?.data) {
+          setTrendingWeek(topRes.data.slice(0, 10));
+        }
+      } catch (err) {
+        console.error('Failed to fetch weekly trending:', err);
+      } finally {
+        if (!cancelled) setTrendingWeekLoading(false);
+      }
+
+      await new Promise((r) => setTimeout(r, 400));
+
+      // Popular Movies
+      try {
+        const moviesRes = await getTopAnime({ type: 'movie', filter: 'bypopularity', limit: 10 });
+        if (!cancelled && moviesRes?.data) {
+          setPopularMovies(moviesRes.data.slice(0, 10));
+        }
+      } catch (err) {
+        console.error('Failed to fetch popular movies:', err);
+      } finally {
+        if (!cancelled) setPopularMoviesLoading(false);
       }
 
       await new Promise((r) => setTimeout(r, 400));
@@ -587,6 +660,135 @@ function Home({ onShowAuth }) {
           onBookmark={handleCardBookmark}
           bookmarkedIds={userBookmarks}
         />
+
+        {/* Trending This Week & Popular Movies Dual Columns Section */}
+        <div className="home-dual-columns-section">
+          {/* Trending This Week */}
+          <div className="home-dual-column">
+            <h2 className="home-dual-title">Trending This Week</h2>
+            <div className="home-list-container">
+              {trendingWeekLoading ? (
+                <div className="home-list-loader">
+                  <Loader2 className="spinner animate-spin" size={24} />
+                  <span>Loading...</span>
+                </div>
+              ) : trendingWeek.length > 0 ? (
+                trendingWeek.map((item, index) => (
+                  <div
+                    key={item.mal_id}
+                    className="home-list-card"
+                    onClick={() => navigate(`/anime/${item.mal_id}`)}
+                  >
+                    <span className={`home-list-rank rank-${index + 1}`}>
+                      #{index + 1}
+                    </span>
+                    <div className="home-list-img-wrapper">
+                      <img
+                        src={item.images?.jpg?.large_image_url || item.images?.jpg?.image_url}
+                        alt={item.title_english || item.title}
+                        className="home-list-img"
+                        loading="lazy"
+                      />
+                    </div>
+                    <div className="home-list-details">
+                      <h3 className="home-list-title">
+                        {item.title_english || item.title}
+                      </h3>
+                      <div className="home-list-meta">
+                        {item.score > 0 && (
+                          <span className="home-list-score">
+                            <Star size={11} fill="currentColor" />
+                            {item.score.toFixed(1)}
+                          </span>
+                        )}
+                        {(item.season || item.year) && (
+                          <span> • {item.season ? item.season.toUpperCase() : item.year}</span>
+                        )}
+                        {item.status && (
+                          <span>
+                             • {item.status === 'Finished Airing' ? 'FINISHED' : 'AIRING'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="home-list-right">
+                      <span className="home-list-type">
+                        {item.type === 'Movie' ? 'MOVIE' : item.type === 'TV' ? 'TV Show' : item.type || 'TV Show'}
+                      </span>
+                      <span className="home-list-episodes">
+                        {item.type === 'Movie' ? '' : (item.episodes ? `${item.episodes} ep` : '')}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="home-list-empty">No trending data available.</div>
+              )}
+            </div>
+          </div>
+
+          {/* Popular Movies */}
+          <div className="home-dual-column">
+            <h2 className="home-dual-title">Popular Movies</h2>
+            <div className="home-list-container">
+              {popularMoviesLoading ? (
+                <div className="home-list-loader">
+                  <Loader2 className="spinner animate-spin" size={24} />
+                  <span>Loading...</span>
+                </div>
+              ) : popularMovies.length > 0 ? (
+                popularMovies.map((item, index) => (
+                  <div
+                    key={item.mal_id}
+                    className="home-list-card"
+                    onClick={() => navigate(`/anime/${item.mal_id}`)}
+                  >
+                    <span className={`home-list-rank rank-${index + 1}`}>
+                      #{index + 1}
+                    </span>
+                    <div className="home-list-img-wrapper">
+                      <img
+                        src={item.images?.jpg?.large_image_url || item.images?.jpg?.image_url}
+                        alt={item.title_english || item.title}
+                        className="home-list-img"
+                        loading="lazy"
+                      />
+                    </div>
+                    <div className="home-list-details">
+                      <h3 className="home-list-title">
+                        {item.title_english || item.title}
+                      </h3>
+                      <div className="home-list-meta">
+                        {item.score > 0 && (
+                          <span className="home-list-score">
+                            <Star size={11} fill="currentColor" />
+                            {item.score.toFixed(1)}
+                          </span>
+                        )}
+                        {(item.season || item.year) && (
+                          <span> • {item.season ? item.season.toUpperCase() : item.year}</span>
+                        )}
+                        {item.status && (
+                          <span>
+                             • {item.status === 'Finished Airing' ? 'FINISHED' : 'AIRING'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="home-list-right">
+                      <span className="home-list-type">MOVIE</span>
+                      <span className="home-list-episodes">
+                        {item.duration ? item.duration.replace(' hr', ' hour').replace(' min', ' mins').replace(' hrs', ' hours') : 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="home-list-empty">No movies available.</div>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* Coming Soon */}
         <AnimeRow

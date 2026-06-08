@@ -88,7 +88,7 @@ export default function AuthModal({ isOpen, onClose }) {
       <div className="modal-content">
         {/* Header */}
         <div className="auth-modal-header">
-          <h2 className="auth-modal-title">AniVault</h2>
+          <h2 className="auth-modal-title">MioAnime</h2>
           <button className="auth-modal-close" onClick={onClose} aria-label="Close">
             <X size={18} />
           </button>

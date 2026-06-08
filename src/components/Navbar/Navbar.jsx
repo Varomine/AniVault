@@ -137,7 +137,7 @@ export default function Navbar({ onShowAuth }) {
       <header className={`header-container${scrolled ? ' scrolled' : ''}`}>
         <nav className="navbar-capsule">
           <Link to="/" className="nav-logo">
-            <span className="nav-logo-text">AniVault</span>
+            <span className="nav-logo-text">MioAnime</span>
           </Link>
 
           <div className="nav-links">

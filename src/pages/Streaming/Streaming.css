@@ -145,7 +145,8 @@
 
 /* Server Modal Premium Styling */
 .server-modal-content {
-  max-width: 320px;
+  width: 100%;
+  max-width: 380px;
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);

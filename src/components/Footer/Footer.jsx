@@ -9,12 +9,12 @@ export default function Footer() {
       <div className="footer-inner">
         {/* Brand */}
         <Link to="/" className="footer-brand">
-          AniVault
+          MioAnime
         </Link>
 
         {/* Copy */}
         <span className="footer-copy">
-          &copy; {currentYear} AniVault. All rights reserved.
+          &copy; {currentYear} MioAnime. All rights reserved.
         </span>
       </div>
     </footer>

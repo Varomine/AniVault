@@ -170,7 +170,7 @@ export default function Landing() {
 
       {/* Landing Central Panels */}
       <div className="landing-content">
-        <h1 className="landing-logo">ANIVAULT</h1>
+        <h1 className="landing-logo">MIOANIME</h1>
         <p className="landing-tagline">THE NEXT-GEN ANIME PLATFORM.</p>
 
         {/* Central Search Box */}

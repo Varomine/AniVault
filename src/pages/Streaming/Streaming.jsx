@@ -6,6 +6,7 @@ import { search123Anime, get123AnimeStream } from '../../services/123animeApi';
 import { searchAllAnime, getAllAnimeStream } from '../../services/allanimeApi';
 import { getHAnimeStreams } from '../../services/hanimeApi';
 import { searchAniZone, getAniZoneEpisodes, getAniZoneStream } from '../../services/anizoneApi';
+import { searchVerse, getVerseStream } from '../../services/verseApi';
 import { getAnimeById, getAnimeRelations, getStatusText, getStatusClass } from '../../services/jikanApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -118,6 +119,65 @@ function findBestAnikageMatch(animeData, results) {
   return validMatches[0].result;
 }
 
+function findBestVerseMatch(animeData, items) {
+  if (!animeData || !items || items.length === 0) return null;
+
+  const targetTitles = [
+    animeData.title,
+    animeData.title_english,
+    ...(animeData.title_synonyms || [])
+  ].filter(Boolean);
+
+  const scoredResults = items.map(r => {
+    const resultTitles = [
+      r.title,
+      r.alternativeTitle
+    ].filter(Boolean);
+
+    let bestScore = 0;
+
+    for (const t of targetTitles) {
+      const tNorm = normalizeTitle(t);
+      const tSeason = getSeasonNumber(t) || 1;
+      const tBase = cleanTitleForBaseComparison(tNorm);
+
+      for (const rT of resultTitles) {
+        const rNorm = normalizeTitle(rT);
+        const rSeason = getSeasonNumber(rNorm) || 1;
+        const rBase = cleanTitleForBaseComparison(rNorm);
+
+        if (tSeason !== rSeason) continue;
+
+        if (tBase === rBase) {
+          bestScore = Math.max(bestScore, 100);
+        } else if (tBase.includes(rBase) || rBase.includes(tBase)) {
+          const ratio = Math.min(tBase.length, rBase.length) / Math.max(tBase.length, rBase.length);
+          const score = 50 + Math.floor(ratio * 40);
+          bestScore = Math.max(bestScore, score);
+        } else {
+          const tTokens = tBase.split(' ').filter(tk => tk.length > 2);
+          const rTokens = rBase.split(' ').filter(tk => tk.length > 2);
+          if (tTokens.length > 0 && rTokens.length > 0) {
+            const common = tTokens.filter(tk => rTokens.includes(tk));
+            const maxRatio = Math.max(common.length / tTokens.length, common.length / rTokens.length);
+            if (maxRatio >= 0.7) {
+              bestScore = Math.max(bestScore, Math.floor(maxRatio * 50));
+            }
+          }
+        }
+      }
+    }
+
+    return { result: r, score: bestScore };
+  });
+
+  const validMatches = scoredResults.filter(item => item.score > 0);
+  if (validMatches.length === 0) return null;
+
+  validMatches.sort((a, b) => b.score - a.score);
+  return validMatches[0].result;
+}
+
 // Cache slugs to avoid re-searching
 const slugCache = new Map();
 
@@ -180,6 +240,10 @@ function Streaming({ onShowAuth }) {
   const [aniZoneSubtitles, setAniZoneSubtitles] = useState([]);
   const [aniZoneEpisodes, setAniZoneEpisodes] = useState([]);
   const [aniZoneEpisodesLoading, setAniZoneEpisodesLoading] = useState(false);
+
+  const [verseId, setVerseId] = useState(null);
+  const [verseLoading, setVerseLoading] = useState(false);
+  const [verseError, setVerseError] = useState(null);
 
   const [bookmarked, setBookmarked] = useState(false);
   const [bookmarkCategory, setBookmarkCategory] = useState('');
@@ -389,6 +453,38 @@ function Streaming({ onShowAuth }) {
     }
   }
 
+  // Search Verse for matching anime
+  async function searchVerseForAnime(animeData, cancelled) {
+    setVerseLoading(true);
+    setVerseError(null);
+
+    const titles = [...new Set([
+      animeData.title_english,
+      animeData.title,
+      animeData.title_japanese,
+    ].filter(Boolean))];
+
+    for (const title of titles) {
+      if (cancelled) return;
+      try {
+        const items = await searchVerse(title);
+        const match = findBestVerseMatch(animeData, items);
+        if (match) {
+          setVerseId(match.slug || match.id);
+          setVerseLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error(`Verse search failed for "${title}":`, err);
+      }
+    }
+
+    if (!cancelled) {
+      setVerseError('Anime not found on Verse server.');
+      setVerseLoading(false);
+    }
+  }
+
   // ---- Step 1+2: Fetch Jikan + search Anikage IN PARALLEL ----
   useEffect(() => {
     let cancelled = false;
@@ -412,6 +508,8 @@ function Streaming({ onShowAuth }) {
       setAniZoneError(null);
       setAniZoneSubtitles([]);
       setAniZoneEpisodes([]);
+      setVerseId(null);
+      setVerseError(null);
     });
     resolvedForId.current = null;
 
@@ -455,6 +553,9 @@ function Streaming({ onShowAuth }) {
 
         // Search AniZone
         searchAniZoneForAnime(data.data, cancelled);
+
+        // Search Verse
+        searchVerseForAnime(data.data, cancelled);
       } catch (err) {
         if (!cancelled) { console.error('Jikan error:', err); setAnimeLoading(false); }
       }
@@ -598,12 +699,31 @@ function Streaming({ onShowAuth }) {
         } finally {
           if (!cancelled) setSourceLoading(false);
         }
+      } else if (activeServer === 'verse') {
+        if (!verseId) return;
+        setSourceLoading(true);
+        setSourceError(null);
+        setStreamSources([]);
+
+        try {
+          const streamUrl = await getVerseStream(verseId, currentEpisode);
+          if (cancelled) return;
+          if (!streamUrl) {
+            setSourceError('No streaming source for this episode on Verse.');
+            return;
+          }
+          setStreamSources([{ quality: 'Verse', streamUrl }]);
+        } catch (err) {
+          if (!cancelled) { console.error('Verse stream fetch error:', err); setSourceError('Failed to load stream.'); }
+        } finally {
+          if (!cancelled) setSourceLoading(false);
+        }
       }
     };
 
     fetchStream();
     return () => { cancelled = true; };
-  }, [activeServer, anikageSlug, oneTwoThreeId, allAnimeId, aniZoneId, aniZoneEpisodes, currentEpisode, anime]);
+  }, [activeServer, anikageSlug, oneTwoThreeId, allAnimeId, aniZoneId, aniZoneEpisodes, verseId, currentEpisode, anime]);
 
   // ---- Related anime (relations from Jikan API, only anime) ----
   useEffect(() => {
@@ -815,7 +935,7 @@ function Streaming({ onShowAuth }) {
 
   // ---- Update watch history when anime and episode are playing ----
   useEffect(() => {
-    if (anime && (streamSources.length > 0 || activeServer === 'koto' || activeServer === 'zone' || (activeServer === '123' && oneTwoThreeEmbedUrl))) {
+    if (anime && (streamSources.length > 0 || activeServer === 'koto' || activeServer === 'zone' || activeServer === 'verse' || (activeServer === '123' && oneTwoThreeEmbedUrl))) {
       updateWatchHistory(anime, currentEpisode, currentEpInfo?.img);
     }
   }, [anime, currentEpisode, streamSources, currentEpInfo, activeServer, oneTwoThreeEmbedUrl]);
@@ -994,6 +1114,32 @@ function Streaming({ onShowAuth }) {
                 <div className="streaming-player-error">
                   <AlertCircle size={40} />
                   <span>No streaming source available for Zone.</span>
+                </div>
+              )
+            ) : activeServer === 'verse' ? (
+              verseLoading || sourceLoading || initialProgress === null ? (
+                <div className="streaming-player-loading">
+                  <div className="spinner" />
+                  <span>{verseLoading ? 'Finding anime on Verse...' : `Loading ep ${currentEpisode}...`}</span>
+                </div>
+              ) : verseError || sourceError ? (
+                <div className="streaming-player-error">
+                  <AlertCircle size={40} />
+                  <span>{verseError || sourceError}</span>
+                </div>
+              ) : streamSources.length > 0 ? (
+                <iframe
+                  src={`/embed.html?sources=${encodeURIComponent(JSON.stringify(streamSources))}&poster=${encodeURIComponent(anime?.images?.jpg?.large_image_url || '')}&t=${initialProgress}`}
+                  className="streaming-iframe"
+                  allowFullScreen
+                  scrolling="no"
+                  allow="autoplay; fullscreen; picture-in-picture"
+                  title={`${titleDisplay} - Episode ${currentEpisode} (Verse)`}
+                />
+              ) : (
+                <div className="streaming-player-error">
+                  <AlertCircle size={40} />
+                  <span>No streaming source available for Verse.</span>
                 </div>
               )
             ) : sourceLoading || searchLoading || initialProgress === null ? (
@@ -1271,6 +1417,23 @@ function Streaming({ onShowAuth }) {
             <div className="server-modal-options">
               <button
                 type="button"
+                className={`server-modal-option ${activeServer === 'koto' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveServer('koto');
+                  setShowServerModal(false);
+                }}
+              >
+                <div className="server-modal-details">
+                  <span className="server-name">Koto</span>
+                  <div className="server-tags">
+                    <span className="server-tag best">Fast</span>
+                    <span className="server-tag">EN</span>
+                  </div>
+                </div>
+                <span className="server-status-dot" />
+              </button>
+              <button
+                type="button"
                 className={`server-modal-option ${activeServer === 'neko' ? 'active' : ''}`}
                 onClick={() => {
                   setActiveServer('neko');
@@ -1281,6 +1444,24 @@ function Streaming({ onShowAuth }) {
                   <span className="server-name">neko</span>
                   <div className="server-tags">
                     <span className="server-tag best">Fast</span>
+                    <span className="server-tag">EN</span>
+                  </div>
+                </div>
+                <span className="server-status-dot" />
+              </button>
+              <button
+                type="button"
+                className={`server-modal-option ${activeServer === 'verse' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveServer('verse');
+                  setShowServerModal(false);
+                }}
+              >
+                <div className="server-modal-details">
+                  <span className="server-name">Verse</span>
+                  <div className="server-tags">
+                    <span className="server-tag best">Fast</span>
+                    <span className="server-tag">EN</span>
                   </div>
                 </div>
                 <span className="server-status-dot" />
@@ -1295,21 +1476,8 @@ function Streaming({ onShowAuth }) {
               >
                 <div className="server-modal-details">
                   <span className="server-name">Miko</span>
-                </div>
-                <span className="server-status-dot" />
-              </button>
-              <button
-                type="button"
-                className={`server-modal-option ${activeServer === 'koto' ? 'active' : ''}`}
-                onClick={() => {
-                  setActiveServer('koto');
-                  setShowServerModal(false);
-                }}
-              >
-                <div className="server-modal-details">
-                  <span className="server-name">Koto</span>
                   <div className="server-tags">
-                    <span className="server-tag best">Fast</span>
+                    <span className="server-tag">EN</span>
                   </div>
                 </div>
                 <span className="server-status-dot" />
@@ -1324,6 +1492,9 @@ function Streaming({ onShowAuth }) {
               >
                 <div className="server-modal-details">
                   <span className="server-name">123</span>
+                  <div className="server-tags">
+                    <span className="server-tag">EN</span>
+                  </div>
                 </div>
                 <span className="server-status-dot" />
               </button>
@@ -1337,6 +1508,25 @@ function Streaming({ onShowAuth }) {
               >
                 <div className="server-modal-details">
                   <span className="server-name">AllAnime</span>
+                  <div className="server-tags">
+                    <span className="server-tag">EN</span>
+                  </div>
+                </div>
+                <span className="server-status-dot" />
+              </button>
+              <button
+                type="button"
+                className={`server-modal-option ${activeServer === 'zone' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveServer('zone');
+                  setShowServerModal(false);
+                }}
+              >
+                <div className="server-modal-details">
+                  <span className="server-name">Zone</span>
+                  <div className="server-tags">
+                    <span className="server-tag">EN</span>
+                  </div>
                 </div>
                 <span className="server-status-dot" />
               </button>
@@ -1352,20 +1542,8 @@ function Streaming({ onShowAuth }) {
                   <span className="server-name">HAnime</span>
                   <div className="server-tags">
                     <span className="server-tag hentai">18+</span>
+                    <span className="server-tag">EN</span>
                   </div>
-                </div>
-                <span className="server-status-dot" />
-              </button>
-              <button
-                type="button"
-                className={`server-modal-option ${activeServer === 'zone' ? 'active' : ''}`}
-                onClick={() => {
-                  setActiveServer('zone');
-                  setShowServerModal(false);
-                }}
-              >
-                <div className="server-modal-details">
-                  <span className="server-name">Zone</span>
                 </div>
                 <span className="server-status-dot" />
               </button>
